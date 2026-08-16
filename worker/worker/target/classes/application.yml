@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: cicd-worker
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        acknowledge-mode: manual
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+worker:
+  id: ${WORKER_ID:worker-local}
+  max-concurrency: ${WORKER_MAX_CONCURRENCY:2}
+  workspace-root: ${WORKSPACE_ROOT:${java.io.tmpdir}/cicd-workspaces}
+  command-timeout-ms: ${WORKER_COMMAND_TIMEOUT_MS:900000}
+  max-pipeline-duration-ms: ${WORKER_MAX_PIPELINE_DURATION_MS:1800000}
+  default-branch: ${WORKER_DEFAULT_BRANCH:main}
+  pipeline-file: ${WORKER_PIPELINE_FILE:pipeline.yml}
+  max-log-bytes: ${WORKER_MAX_LOG_BYTES:1048576}
+  retry-enabled: ${WORKER_RETRY_ENABLED:true}
+  max-retries: ${WORKER_MAX_RETRIES:3}
+  retry-delay-ms: ${WORKER_RETRY_DELAY_MS:30000}
+  command-policy: ${WORKER_COMMAND_POLICY:STRICT}
+  build-image-enabled: ${WORKER_BUILD_IMAGE_ENABLED:false}
+  rabbit:
+    jobs-exchange: ${CICD_JOBS_EXCHANGE:cicd.jobs.exchange}
+    results-exchange: ${CICD_RESULTS_EXCHANGE:cicd.results.exchange}
+    job-routing-key: ${CICD_JOB_ROUTING_KEY:cicd.job.submitted}
+    delay-routing-key: ${CICD_DELAY_ROUTING_KEY:cicd.job.delay}
+    dead-routing-key: ${CICD_DEAD_ROUTING_KEY:cicd.job.dead}
+    result-routing-key: ${CICD_RESULT_ROUTING_KEY:cicd.result}
+    job-queue: ${CICD_JOB_QUEUE:cicd.jobs}
+    delay-queue: ${CICD_DELAY_QUEUE:cicd.jobs.delay}
+    dead-letter-queue: ${CICD_DLQ:cicd.jobs.dlq}
+  git:
+    clone-timeout-ms: ${GIT_CLONE_TIMEOUT_MS:300000}
+    username: ${GIT_USERNAME:}
+    password: ${GIT_PASSWORD:}
+    token: ${GIT_TOKEN:}
+  sandbox:
+    mode: ${WORKER_SANDBOX:process}
+    docker-image: ${WORKER_SANDBOX_DOCKER_IMAGE:maven:3.9-eclipse-temurin-17}
+    docker-network: ${WORKER_SANDBOX_DOCKER_NETWORK:}
+    run-as-user: ${WORKER_SANDBOX_USER:}
+    container-workspace-path: ${WORKER_SANDBOX_CONTAINER_WORKSPACE:/workspace}
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{workerId:-}] [%X{jobId:-}] [%X{stage:-}] [%X{job:-}] [%X{step:-}] %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.cicd.platform.worker: INFO
+    org.springframework.amqp.rabbit.listener: WARN

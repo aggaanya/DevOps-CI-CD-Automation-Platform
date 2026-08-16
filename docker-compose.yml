@@ -1,0 +1,65 @@
+# Local Phase 4 CI/CD platform: RabbitMQ + execution worker.
+# Start with:  docker compose up -d --build
+# Worker is HTTP-observable at http://localhost:8080 (health, metrics, prometheus).
+# RabbitMQ management UI:  http://localhost:15672  (guest/guest)
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: cicd-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build:
+      context: ./worker
+    container_name: cicd-worker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      WORKER_ID: worker-docker
+      WORKSPACE_ROOT: /data/workspaces
+      WORKER_MAX_CONCURRENCY: "2"
+      # process sandbox = child processes inside this container (local dev).
+      # Docker sandbox mode (isolated per-step containers) requires mounting
+      # the docker socket into the worker; not enabled here by design.
+      WORKER_SANDBOX: process
+      WORKER_COMMAND_POLICY: STRICT
+      WORKER_BUILD_IMAGE_ENABLED: "false"
+      WORKER_COMMAND_TIMEOUT_MS: "900000"
+      WORKER_MAX_PIPELINE_DURATION_MS: "1800000"
+      WORKER_RETRY_ENABLED: "true"
+      WORKER_MAX_RETRIES: "3"
+      WORKER_RETRY_DELAY_MS: "30000"
+      CICD_JOBS_EXCHANGE: cicd.jobs.exchange
+      CICD_RESULTS_EXCHANGE: cicd.results.exchange
+      CICD_JOB_ROUTING_KEY: cicd.job.submitted
+      CICD_DELAY_ROUTING_KEY: cicd.job.delay
+      CICD_DEAD_ROUTING_KEY: cicd.job.dead
+      CICD_RESULT_ROUTING_KEY: cicd.result
+      CICD_JOB_QUEUE: cicd.jobs
+      CICD_DELAY_QUEUE: cicd.jobs.delay
+      CICD_DLQ: cicd.jobs.dlq
+    ports:
+      - "8080:8080"
+    volumes:
+      - worker-workspaces:/data/workspaces
+
+volumes:
+  rabbitmq-data:
+  worker-workspaces:
