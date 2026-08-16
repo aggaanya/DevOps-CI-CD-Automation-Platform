@@ -11,6 +11,11 @@ target/
 # Logs
 *.log
 
+# Environment (local dev credentials — never commit)
+.env
+.env.local
+.env.*.local
+
 # OS
 .DS_Store
 Thumbs.db

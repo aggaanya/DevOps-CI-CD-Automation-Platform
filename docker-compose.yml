@@ -1,17 +1,32 @@
-# Local Phase 4 CI/CD platform: RabbitMQ + execution worker.
-# Start with:  docker compose up -d --build
-# Worker is HTTP-observable at http://localhost:8080 (health, metrics, prometheus).
-# RabbitMQ management UI:  http://localhost:15672  (guest/guest)
+# Local Phase 0 platform stack: RabbitMQ + PostgreSQL + Redis + Keycloak + Worker.
+# Reproduce with:  docker compose up --build     (or `up -d --build` for detached)
+# Tear down with:  docker compose down           (add -v to also remove volumes)
+#
+# All services share one dedicated bridge network `cicd-local`.
+# All credentials/ports come from environment variables (defaults in this file,
+# real values optional via .env — see .env.example).
+#
+# RabbitMQ topology (exchanges/queues/DLQ) is declared by the Worker itself in
+# RabbitMQConfig.java and is intentionally NOT re-declared here.
+#
+# Ports (host side, all configurable):
+#   RabbitMQ AMQP       5672  (RABBITMQ_AMQP_PORT)
+#   RabbitMQ management 15672 (RABBITMQ_MGMT_PORT)
+#   PostgreSQL          5432  (POSTGRES_PORT)
+#   Redis               6379  (REDIS_PORT)
+#   Keycloak            8081  (KEYCLOAK_PORT)
+#   Worker (actuator)   8080  (WORKER_PORT)
+
 services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
-    container_name: cicd-rabbitmq
+    networks: [cicd-local]
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
@@ -20,19 +35,71 @@ services:
       timeout: 5s
       retries: 12
 
+  postgres:
+    image: postgres:16-alpine
+    networks: [cicd-local]
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cicd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cicd}
+      POSTGRES_DB: ${POSTGRES_DB:-cicd}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    networks: [cicd-local]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    networks: [cicd-local]
+    ports:
+      - "${KEYCLOAK_PORT:-8081}:8080"
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: dev-file
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    command: ["start-dev"]
+    healthcheck:
+      # Image has bash+grep but no curl/wget: probe the management port (9000)
+      # readiness endpoint over a bash /dev/tcp connection.
+      test: ["CMD-SHELL", "bash -c \"exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
   worker:
     build:
       context: ./worker
-    container_name: cicd-worker
+    networks: [cicd-local]
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: "5672"
-      RABBITMQ_USERNAME: guest
-      RABBITMQ_PASSWORD: guest
-      WORKER_ID: worker-docker
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      WORKER_ID: ${WORKER_ID:-worker-docker}
       WORKSPACE_ROOT: /data/workspaces
       WORKER_MAX_CONCURRENCY: "2"
       # process sandbox = child processes inside this container (local dev).
@@ -56,10 +123,23 @@ services:
       CICD_DELAY_QUEUE: cicd.jobs.delay
       CICD_DLQ: cicd.jobs.dlq
     ports:
-      - "8080:8080"
+      - "${WORKER_PORT:-8080}:8080"
     volumes:
       - worker-workspaces:/data/workspaces
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+networks:
+  cicd-local:
+    name: cicd-platform-local
+    driver: bridge
 
 volumes:
   rabbitmq-data:
+  postgres-data:
+  redis-data:
   worker-workspaces:

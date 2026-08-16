@@ -142,11 +142,13 @@ Implemented and verified:
   - Prometheus metrics and health endpoints
   - Unit and integration tests (failsafe `*IT`)
 - RabbitMQ service in `docker-compose.yml` with a healthcheck.
+- PostgreSQL, Redis, and Keycloak services in `docker-compose.yml` (local
+  infrastructure foundation, Phase 0).
 - `scripts/publish-job.ps1` for submitting test jobs.
 
-Not yet implemented (see roadmap below): PostgreSQL, control-plane backend,
-React dashboard, GitHub webhook integration, Docker/ACR delivery, Azure
-Container Apps deployment, Terraform, Keycloak, observability stack, and CI
+Not yet implemented (see roadmap below): control-plane backend, React
+dashboard, GitHub webhook integration, Docker/ACR delivery, Azure
+Container Apps deployment, Terraform, observability stack, and CI
 workflows.
 
 ## Future phases
@@ -164,15 +166,33 @@ See `PROJECT_SPECIFICATION.md` (§11.1) for the full roadmap.
 | 6 | Dashboard and hardening: history/log dashboard, error handling, observability, E2E tests |
 | Phase 2 | Future scope: approvals, rollback, security gates, multi-tenancy hardening, GitLab/Bitbucket, AKS/Kafka |
 
-## Quick start (current state)
+## Local development (current state)
+
+The full local stack is reproducible with a single command. See
+`docs/local-development.md` for the complete guide (prerequisites, ports,
+health checks, troubleshooting).
 
 ```bash
-docker compose up -d --build     # RabbitMQ + Worker
+cp .env.example .env          # optional; defaults work without .env
+docker compose up --build     # RabbitMQ + PostgreSQL + Redis + Keycloak + Worker
 ```
 
-- Worker health: <http://localhost:8080/actuator/health>
-- Prometheus metrics: <http://localhost:8080/actuator/prometheus>
-- RabbitMQ UI: <http://localhost:15672> (guest/guest)
+| Service | Local URL / port | Health check |
+|---|---|---|
+| Worker | <http://localhost:8080/actuator/health> | `/actuator/health` via container healthcheck |
+| RabbitMQ UI | <http://localhost:15672> | `rabbitmq-diagnostics ping` |
+| PostgreSQL | `localhost:5432` | `pg_isready` |
+| Redis | `localhost:6379` | `redis-cli ping` |
+| Keycloak | <http://localhost:8081> | `/health/ready` on management port 9000 |
+
+Tear down with:
+
+```bash
+docker compose down           # add -v to also remove named volumes
+```
+
+All credentials and ports come from environment variables with safe local
+defaults (see `.env.example`). Credentials are never production secrets.
 
 Submit a test job:
 
