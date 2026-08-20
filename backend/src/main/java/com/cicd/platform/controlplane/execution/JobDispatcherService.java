@@ -60,14 +60,13 @@ public class JobDispatcherService {
 
     @Transactional
     public void dispatchReadyJobs(UUID runId) {
-        log.info("Dispatching ready jobs for run: {}", runId);
-
         PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
         if (run == null || run.getStatus() != PipelineRun.RunStatus.RUNNING) {
             return;
         }
 
         List<PipelineStage> stages = pipelineStageRepository.findByPipelineRunIdOrderByOrderIndexAsc(runId);
+        log.info("[DISPATCH_READY] runId={}, stagesCount={}", runId, stages.size());
 
         Map<String, List<String>> stageDependencies = buildDependencyMap(run.getPipelineVersion());
         Map<String, Map<String, List<String>>> jobDependencies = buildJobDependencyMap(run.getPipelineVersion());
@@ -209,7 +208,11 @@ public class JobDispatcherService {
     }
 
     public void dispatchJob(PipelineJob job) {
-        log.info("Dispatching job: {} ({})", job.getName(), job.getId());
+        PipelineStage stage = job.getPipelineStage();
+        PipelineRun run = stage.getPipelineRun();
+        ExecutionMdc.setRunId(run.getId());
+        ExecutionMdc.setStageId(stage.getId());
+        ExecutionMdc.setJobId(job.getId());
 
         job.setStatus(PipelineJob.JobStatus.QUEUED);
         pipelineJobRepository.save(job);
@@ -217,31 +220,43 @@ public class JobDispatcherService {
         int attemptNumber = computeAttemptNumber(job);
         JobAttempt attempt = new JobAttempt(job, attemptNumber);
         attempt.setStatus(JobAttempt.AttemptStatus.PENDING);
-        attempt.setStartedAt(Instant.now());
         jobAttemptRepository.save(attempt);
+
+        ExecutionMdc.setAttemptId(attempt.getId());
 
         JobDispatchMessage message = buildDispatchMessage(job, attemptNumber);
         sendDispatchMessage(message);
 
-        log.info("Dispatched job {} to exchange (attempt {})", job.getId(), attemptNumber);
+        log.info("[JOB_DISPATCHED] jobId={}, jobName={}, jobType={}, attemptNumber={}, stageId={}, runId={}",
+                job.getId(), job.getName(), job.getJobType(), attemptNumber, stage.getId(), run.getId());
+
+        ExecutionMdc.clearAll();
     }
 
     @Transactional
     public void dispatchForRetry(PipelineJob job, int attemptNumber) {
-        log.info("Dispatching retry for job: {}, attempt: {}", job.getId(), attemptNumber);
+        PipelineStage stage = job.getPipelineStage();
+        PipelineRun run = stage.getPipelineRun();
+        ExecutionMdc.setRunId(run.getId());
+        ExecutionMdc.setStageId(stage.getId());
+        ExecutionMdc.setJobId(job.getId());
 
         job.setStatus(PipelineJob.JobStatus.QUEUED);
         pipelineJobRepository.save(job);
 
         JobAttempt attempt = new JobAttempt(job, attemptNumber);
         attempt.setStatus(JobAttempt.AttemptStatus.PENDING);
-        attempt.setStartedAt(Instant.now());
         jobAttemptRepository.save(attempt);
+
+        ExecutionMdc.setAttemptId(attempt.getId());
 
         JobDispatchMessage message = buildDispatchMessage(job, attemptNumber);
         sendDispatchMessage(message);
 
-        log.info("Dispatched retry for job {} to exchange (attempt {})", job.getId(), attemptNumber);
+        log.info("[JOB_RETRY_DISPATCHED] jobId={}, jobName={}, attemptNumber={}, stageId={}, runId={}",
+                job.getId(), job.getName(), attemptNumber, stage.getId(), run.getId());
+
+        ExecutionMdc.clearAll();
     }
 
     private int computeAttemptNumber(PipelineJob job) {

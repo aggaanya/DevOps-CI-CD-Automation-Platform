@@ -1,4 +1,7 @@
 spring:
+  main:
+    allow-bean-definition-overriding: true
+
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -18,3 +21,6 @@ spring:
     port: 5672
     username: guest
     password: guest
+    listener:
+      simple:
+        auto-startup: false

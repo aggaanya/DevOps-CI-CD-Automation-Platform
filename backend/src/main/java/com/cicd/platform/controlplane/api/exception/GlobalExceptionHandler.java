@@ -43,6 +43,12 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of("VALIDATION_FAILED", "Request validation failed", details));
     }
 
+    @ExceptionHandler(RunExecutionException.class)
+    public ResponseEntity<ApiErrorResponse> handleRunExecution(RunExecutionException ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiErrorResponse.of("RUN_EXECUTION_ERROR", ex.getMessage()));
+    }
+
     @ExceptionHandler(PipelineValidationException.class)
     public ResponseEntity<ApiErrorResponse> handlePipelineValidation(PipelineValidationException ex) {
         List<PipelineValidationError> fieldErrors = ex.getValidationErrors().stream()

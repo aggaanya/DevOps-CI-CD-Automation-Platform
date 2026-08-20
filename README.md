@@ -64,38 +64,36 @@ behind these decisions and their trade-offs.
 
 | Component | Status | Responsibility |
 |---|---|---|
+| `frontend/` | Phase 0 (foundation) | React + TypeScript + Vite dashboard shell with health status display |
+| `backend/` | Phase 0 (foundation) | Spring Boot control plane: health endpoint, PostgreSQL/RabbitMQ connectivity |
 | `worker/` | Implemented (Phase 4 engine) | Consumes pipeline jobs from RabbitMQ, clones the repo, parses/validates the pipeline YAML, executes steps in a sandbox, publishes structured results |
-| `backend/` | Planned (Phase 1) | Spring Boot control plane: identity, projects, repositories, pipelines, orchestration, audit |
-| `frontend/` | Planned (Phase 6) | React + TypeScript dashboard for runs, logs, artifacts, deployments |
 | `pipeline-engine/` | Inside `worker/` for now | YAML DSL parser and validator (may move to a shared module later) |
-| `infrastructure/` | Planned (Phase 0/5) | Terraform modules and environments for Azure |
-| `docker-compose.yml` | Partial | RabbitMQ + Worker locally; PostgreSQL to be added |
+| `infrastructure/` | Phase 0 (skeleton) | Terraform modules and environments for Azure |
 | `scripts/` | Implemented | `publish-job.ps1` publishes a `PipelineJob` to RabbitMQ for local testing |
 
 ## Local development prerequisites
 
-- **Java 21** (JDK) — to build and run the worker on the JVM.
-- **Maven 3.9+** — to build the worker (`worker/pom.xml`).
-- **Docker** with **Docker Compose** — for RabbitMQ, the worker container, and
-  later PostgreSQL and the control plane.
+- **Java 21** (JDK) — to build and run the worker and backend on the JVM.
+- **Maven 3.9+** — to build the worker and backend (`mvn -B verify`).
+- **Node.js 20+** and **npm** — to build the React frontend.
+- **Docker** with **Docker Compose** — for all services.
 - **PowerShell** — `scripts/publish-job.ps1` requires Windows PowerShell 5.1+.
-- A local **RabbitMQ** (provided by `docker compose`) on `localhost:5672`.
-- Optional: **Git** CLI for local repository fixtures used in tests.
 
 ## Repository structure
 
 ```text
 DevOps-CI-CD-Automation-Platform/
+  frontend/                 # React TypeScript SPA (Phase 0 foundation)
+  backend/                  # Spring Boot control plane (Phase 0 foundation)
   worker/                   # runner agent / execution adapter (implemented)
-  backend/                  # Spring Boot control plane (planned, Phase 1)
-  frontend/                 # React TypeScript SPA (planned, Phase 6)
   pipeline-engine/          # DSL schema/parser (currently inside worker)
-  infrastructure/           # Terraform modules and environments (planned)
+  infrastructure/           # Terraform modules and environments (Phase 0 skeleton)
   docs/                     # ADRs, module documentation, runbooks
   scripts/                  # safe developer automation
   tests/                    # e2e, load, fixtures (planned)
   .github/workflows/        # CI for this repository (planned)
   docker-compose.yml
+  .env.example
   README.md
   PROJECT_SPECIFICATION.md
 ```
@@ -133,7 +131,15 @@ docker-compose, Terraform, or other tooling.
 
 Implemented and verified:
 
-- Spring Boot 3.3.5 **Worker** (Java 21) with:
+- **Frontend** (Phase 0): React 18 + TypeScript + Vite SPA shell with backend
+  health status display; Dockerfile with nginx reverse proxy.
+- **Backend** (Phase 0): Spring Boot 3.3.5 control plane with:
+  - Health endpoint (`GET /api/v1/health`) reporting database and RabbitMQ status
+  - PostgreSQL connectivity via Spring Data JPA
+  - RabbitMQ connectivity via Spring AMQP
+  - Actuator health, structured logging, graceful shutdown
+  - Unit and integration tests (H2 for test profile)
+- **Worker** (Phase 4): Spring Boot 3.3.5 with:
   - RabbitMQ job consumption, retry/delay/DLQ, result publishing
   - JGit clone, SHA verification, detached checkout
   - Pipeline YAML parser, validator, loader
@@ -141,15 +147,13 @@ Implemented and verified:
   - Process and Docker sandboxes, command security policy, env whitelisting
   - Prometheus metrics and health endpoints
   - Unit and integration tests (failsafe `*IT`)
-- RabbitMQ service in `docker-compose.yml` with a healthcheck.
-- PostgreSQL, Redis, and Keycloak services in `docker-compose.yml` (local
-  infrastructure foundation, Phase 0).
+- **Infrastructure**: Docker Compose stack (PostgreSQL, RabbitMQ, Redis,
+  Keycloak, Backend, Frontend, Worker); Terraform skeleton for Azure.
 - `scripts/publish-job.ps1` for submitting test jobs.
 
-Not yet implemented (see roadmap below): control-plane backend, React
-dashboard, GitHub webhook integration, Docker/ACR delivery, Azure
-Container Apps deployment, Terraform, observability stack, and CI
-workflows.
+Not yet implemented (see roadmap below): GitHub webhook integration, pipeline
+YAML execution, transactional outbox, Docker/ACR delivery, Azure Container
+Apps deployment, full observability stack, and CI workflows.
 
 ## Future phases
 
@@ -174,12 +178,14 @@ health checks, troubleshooting).
 
 ```bash
 cp .env.example .env          # optional; defaults work without .env
-docker compose up --build     # RabbitMQ + PostgreSQL + Redis + Keycloak + Worker
+docker compose up --build     # all services: frontend, backend, worker, infra
 ```
 
 | Service | Local URL / port | Health check |
 |---|---|---|
-| Worker | <http://localhost:8080/actuator/health> | `/actuator/health` via container healthcheck |
+| Frontend | <http://localhost:3000> | nginx serves React SPA |
+| Backend (Control Plane) | <http://localhost:8081/api/v1/health> | `/api/v1/health` |
+| Worker | <http://localhost:8082/actuator/health> | `/actuator/health` via container healthcheck |
 | RabbitMQ UI | <http://localhost:15672> | `rabbitmq-diagnostics ping` |
 | PostgreSQL | `localhost:5432` | `pg_isready` |
 | Redis | `localhost:6379` | `redis-cli ping` |

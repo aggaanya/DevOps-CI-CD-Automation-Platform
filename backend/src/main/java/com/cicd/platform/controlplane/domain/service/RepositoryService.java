@@ -1,5 +1,6 @@
 package com.cicd.platform.controlplane.domain.service;
 
+import com.cicd.platform.controlplane.api.exception.BusinessRuleException;
 import com.cicd.platform.controlplane.api.exception.ResourceNotFoundException;
 import com.cicd.platform.controlplane.domain.entity.Project;
 import com.cicd.platform.controlplane.domain.entity.Repository;
@@ -33,7 +34,7 @@ public class RepositoryService {
         try {
             providerType = ProviderType.valueOf(provider.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new com.cicd.platform.controlplane.api.exception.BusinessRuleException(
+            throw new BusinessRuleException(
                     "Unsupported provider: " + provider + ". Supported providers: GITHUB, GITLAB, BITBUCKET");
         }
 
@@ -52,5 +53,28 @@ public class RepositoryService {
     @Transactional(readOnly = true)
     public List<Repository> findByProjectId(UUID projectId) {
         return repositoryRepository.findByProjectId(projectId);
+    }
+
+    public Repository update(UUID id, String repositoryUrl, String repositoryName,
+                             String defaultBranch, Repository.RepositoryStatus status) {
+        Repository repo = findById(id);
+        if (repositoryUrl != null && !repositoryUrl.isBlank()) {
+            repo.setRepositoryUrl(repositoryUrl);
+        }
+        if (repositoryName != null && !repositoryName.isBlank()) {
+            repo.setRepositoryName(repositoryName);
+        }
+        if (defaultBranch != null && !defaultBranch.isBlank()) {
+            repo.setDefaultBranch(defaultBranch);
+        }
+        if (status != null) {
+            repo.setStatus(status);
+        }
+        return repositoryRepository.save(repo);
+    }
+
+    public void delete(UUID id) {
+        Repository repo = findById(id);
+        repositoryRepository.delete(repo);
     }
 }

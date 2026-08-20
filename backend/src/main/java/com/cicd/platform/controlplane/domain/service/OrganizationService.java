@@ -1,5 +1,6 @@
 package com.cicd.platform.controlplane.domain.service;
 
+import com.cicd.platform.controlplane.api.exception.BusinessRuleException;
 import com.cicd.platform.controlplane.api.exception.ResourceConflictException;
 import com.cicd.platform.controlplane.api.exception.ResourceNotFoundException;
 import com.cicd.platform.controlplane.domain.entity.Organization;
@@ -37,5 +38,21 @@ public class OrganizationService {
     @Transactional(readOnly = true)
     public List<Organization> findAll() {
         return organizationRepository.findAll();
+    }
+
+    public Organization update(UUID id, String name, String description) {
+        Organization org = findById(id);
+        if (name != null && !name.isBlank()) {
+            org.setName(name);
+        }
+        if (description != null) {
+            org.setDescription(description);
+        }
+        return organizationRepository.save(org);
+    }
+
+    public void delete(UUID id) {
+        Organization org = findById(id);
+        organizationRepository.delete(org);
     }
 }

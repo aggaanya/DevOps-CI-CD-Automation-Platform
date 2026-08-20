@@ -11,8 +11,8 @@ import java.util.List;
 
 public class PipelineConfigMapper {
 
-    public record StageDefinition(String name, int orderIndex, List<JobDefinition> jobs) {}
-    public record JobDefinition(String name, PipelineJob.JobType jobType) {}
+    public record StageDefinition(String name, int orderIndex, List<String> dependsOn, List<JobDefinition> jobs) {}
+    public record JobDefinition(String name, PipelineJob.JobType jobType, List<String> dependsOn) {}
 
     public Pipeline toPipeline(PipelineConfig config, com.cicd.platform.controlplane.domain.entity.Project project) {
         return new Pipeline(project, config.getName(), config.getDescription());
@@ -27,10 +27,12 @@ public class PipelineConfigMapper {
             List<JobDefinition> jobDefs = new ArrayList<>();
             if (stage.getJobs() != null) {
                 for (JobConfig job : stage.getJobs()) {
-                    jobDefs.add(new JobDefinition(job.getName(), resolveJobType(job.getType())));
+                    jobDefs.add(new JobDefinition(job.getName(), resolveJobType(job.getType()),
+                            job.getDependsOn() != null ? job.getDependsOn() : List.of()));
                 }
             }
-            definitions.add(new StageDefinition(stage.getName(), i, jobDefs));
+            definitions.add(new StageDefinition(stage.getName(), i,
+                    stage.getDependsOn() != null ? stage.getDependsOn() : List.of(), jobDefs));
         }
         return definitions;
     }

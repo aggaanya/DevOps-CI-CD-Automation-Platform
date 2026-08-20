@@ -112,6 +112,50 @@ class PipelineConfigMapperTest {
         assertTrue(definitions.isEmpty());
     }
 
+    @Test
+    void toStageDefinitionsShouldForwardStageDependsOn() {
+        StageConfig build = createStage("build", List.of(createJob("compile", "BUILD")));
+        StageConfig test = createStage("test", List.of(createJob("unit-test", "TEST")));
+        test.setDependsOn(List.of("build"));
+        PipelineConfig config = new PipelineConfig("pipeline", "desc", List.of(build, test));
+
+        List<PipelineConfigMapper.StageDefinition> definitions = mapper.toStageDefinitions(config);
+
+        assertEquals(2, definitions.size());
+        assertEquals(List.of(), definitions.get(0).dependsOn());
+        assertEquals(List.of("build"), definitions.get(1).dependsOn());
+    }
+
+    @Test
+    void toStageDefinitionsShouldForwardJobDependsOn() {
+        JobConfig compile = createJob("compile", "BUILD");
+        JobConfig unitTest = createJob("unit-test", "TEST");
+        unitTest.setDependsOn(List.of("compile"));
+        StageConfig stage = createStage("build", List.of(compile, unitTest));
+        PipelineConfig config = new PipelineConfig("pipeline", "desc", List.of(stage));
+
+        List<PipelineConfigMapper.StageDefinition> definitions = mapper.toStageDefinitions(config);
+
+        List<PipelineConfigMapper.JobDefinition> jobDefs = definitions.get(0).jobs();
+        assertEquals(2, jobDefs.size());
+        assertEquals(List.of(), jobDefs.get(0).dependsOn());
+        assertEquals(List.of("compile"), jobDefs.get(1).dependsOn());
+    }
+
+    @Test
+    void toStageDefinitionsShouldHandleNullDependsOnGracefully() {
+        StageConfig stage = new StageConfig("build");
+        stage.setJobs(List.of(createJob("compile", "BUILD")));
+        stage.setDependsOn(null);
+        PipelineConfig config = new PipelineConfig("pipeline", "desc", List.of(stage));
+
+        List<PipelineConfigMapper.StageDefinition> definitions = mapper.toStageDefinitions(config);
+
+        assertEquals(1, definitions.size());
+        assertEquals(List.of(), definitions.get(0).dependsOn());
+        assertEquals(List.of(), definitions.get(0).jobs().get(0).dependsOn());
+    }
+
     private StageConfig createStage(String name, List<JobConfig> jobs) {
         StageConfig stage = new StageConfig(name);
         stage.setJobs(jobs);

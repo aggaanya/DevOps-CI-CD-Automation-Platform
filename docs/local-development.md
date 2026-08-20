@@ -10,7 +10,7 @@ plus the Phase 4 execution Worker.
 - A **JDK 21** and **Maven 3.9+** only if you want to build/run the worker
   outside Docker or run its tests (`mvn -B verify`).
 - **PowerShell** for `scripts/publish-job.ps1` (optional, Windows).
-- Ports 5672, 15672, 5432, 6379, 8081, 8080 free on the host (all
+- Ports 5672, 15672, 5432, 6379, 8083, 8081, 8082, 3000 free on the host (all
   configurable via `.env`).
 
 ## Services
@@ -18,10 +18,12 @@ plus the Phase 4 execution Worker.
 | Service | Image | Purpose | Exposed ports |
 |---|---|---|---|
 | `rabbitmq` | `rabbitmq:3.13-management-alpine` | Durable job queue / results | 5672 (AMQP), 15672 (management UI) |
-| `postgres` | `postgres:16-alpine` | Durable platform state (later phases) | 5432 |
+| `postgres` | `postgres:16-alpine` | Durable platform state | 5432 |
 | `redis` | `redis:7-alpine` | Cache (reserved for later phases) | 6379 |
-| `keycloak` | `quay.io/keycloak/keycloak:25.0` | OIDC identity (development mode) | 8081 |
-| `worker` | built from `worker/` | Pipeline execution engine | 8080 (actuator) |
+| `keycloak` | `quay.io/keycloak/keycloak:25.0` | OIDC identity (development mode) | 8083 |
+| `backend` | built from `backend/` | Spring Boot control plane API | 8081 |
+| `frontend` | built from `frontend/` | React dashboard | 3000 |
+| `worker` | built from `worker/` | Pipeline execution engine | 8082 (actuator) |
 
 All services share one dedicated bridge network, `cicd-local`
 (Docker network name `cicd-platform-local`).
@@ -89,11 +91,11 @@ Direct endpoint checks:
 
 | Service | Check |
 |---|---|
-| Worker | `Invoke-RestMethod http://localhost:8080/actuator/health` or `curl http://localhost:8080/actuator/health` |
+| Worker | `Invoke-RestMethod http://localhost:8082/actuator/health` or `curl http://localhost:8082/actuator/health` |
 | RabbitMQ | <http://localhost:15672> (management UI), or `docker compose exec rabbitmq rabbitmq-diagnostics -q ping` |
 | PostgreSQL | `docker compose exec postgres pg_isready -U cicd -d cicd` |
 | Redis | `docker compose exec redis redis-cli ping` (expects `PONG`) |
-| Keycloak | <http://localhost:8081> (admin console), readiness: `http://localhost:9000/health/ready` inside the container |
+| Keycloak | <http://localhost:8083> (admin console), readiness: `http://localhost:9000/health/ready` inside the container |
 
 Keycloak runs in development mode (`start-dev`) with an on-disk dev database
 (`KC_DB=dev-file`) and health/metrics endpoints enabled. Its healthcheck uses a
@@ -104,7 +106,7 @@ image has no `curl`/`wget`.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Port already in use on `up` | Host service on 5672/5432/6379/8081/8080 | Override the `*_PORT` variables in `.env`, or stop the conflicting service |
+| Port already in use on `up` | Host service on 5672/5432/6379/8083/8081/8082/3000 | Override the `*_PORT` variables in `.env`, or stop the conflicting service |
 | Worker `starting`/`unhealthy` | RabbitMQ not healthy yet | `docker compose ps`; worker waits for `rabbitmq` (depends_on condition) |
 | Keycloak `starting` | Cold start takes 30–90s | Wait; `docker compose ps` until healthy |
 | `docker compose` errors | Missing/invalid `.env` | Remove or fix `.env`; defaults are safe |

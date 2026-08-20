@@ -41,6 +41,16 @@ server:
   port: ${SERVER_PORT:8081}
   shutdown: graceful
 
+execution:
+  workspace:
+    base-path: ${WORKSPACE_BASE_PATH:workspace}
+    timeout-seconds: ${WORKSPACE_TIMEOUT:3600}
+    max-retries: ${WORKSPACE_MAX_RETRIES:3}
+    retry-enabled: ${WORKSPACE_RETRY_ENABLED:true}
+    worker-id: ${WORKER_ID:worker-local}
+    concurrency: ${WORKER_CONCURRENCY:1}
+    prefetch: ${WORKER_PREFETCH:1}
+
 management:
   endpoints:
     web:
@@ -50,9 +60,21 @@ management:
     health:
       show-details: always
 
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+webhook:
+  github:
+    secret: ${WEBHOOK_GITHUB_SECRET:}
+  gitlab:
+    secret: ${WEBHOOK_GITLAB_SECRET:}
+
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{correlationId:-}] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{correlationId:-}] [run=%X{runId:-} stage=%X{stageId:-} job=%X{jobId:-} attempt=%X{attemptId:-} worker=%X{workerId:-}] %logger{36} - %msg%n"
   level:
     root: INFO
     com.cicd.platform.controlplane: INFO

@@ -2,6 +2,7 @@ package com.cicd.platform.controlplane.api.controller;
 
 import com.cicd.platform.controlplane.api.dto.CreateProjectRequest;
 import com.cicd.platform.controlplane.api.dto.ProjectResponse;
+import com.cicd.platform.controlplane.api.dto.UpdateProjectRequest;
 import com.cicd.platform.controlplane.domain.service.ProjectService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -38,5 +39,18 @@ public class ProjectController {
     public ResponseEntity<List<ProjectResponse>> list(@RequestParam UUID organizationId) {
         var projects = projectService.findByOrganizationId(organizationId);
         return ResponseEntity.ok(projects.stream().map(ProjectResponse::from).toList());
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ProjectResponse> update(@PathVariable UUID id,
+                                                  @Valid @RequestBody UpdateProjectRequest request) {
+        var project = projectService.update(id, request.name(), request.description());
+        return ResponseEntity.ok(ProjectResponse.from(project));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        projectService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }

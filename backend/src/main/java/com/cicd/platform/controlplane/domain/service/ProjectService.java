@@ -46,4 +46,20 @@ public class ProjectService {
     public List<Project> findByOrganizationId(UUID organizationId) {
         return projectRepository.findByOrganizationId(organizationId);
     }
+
+    public Project update(UUID id, String name, String description) {
+        Project project = findById(id);
+        if (name != null && !name.isBlank()) {
+            project.setName(name);
+        }
+        if (description != null) {
+            project.setDescription(description);
+        }
+        return projectRepository.save(project);
+    }
+
+    public void delete(UUID id) {
+        Project project = findById(id);
+        projectRepository.delete(project);
+    }
 }

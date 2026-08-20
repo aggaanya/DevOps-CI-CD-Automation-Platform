@@ -8,6 +8,10 @@ target/
 .idea/
 *.iml
 
+# Node.js
+node_modules/
+dist/
+
 # Logs
 *.log
 
@@ -19,3 +23,10 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!*.tfvars.example

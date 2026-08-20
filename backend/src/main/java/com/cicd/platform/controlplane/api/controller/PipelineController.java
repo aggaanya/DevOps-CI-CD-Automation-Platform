@@ -1,7 +1,9 @@
 package com.cicd.platform.controlplane.api.controller;
 
 import com.cicd.platform.controlplane.api.dto.*;
+import com.cicd.platform.controlplane.domain.entity.Pipeline;
 import com.cicd.platform.controlplane.domain.service.PipelineService;
+import com.cicd.platform.controlplane.execution.RunService;
 import com.cicd.platform.controlplane.pipeline.PipelineYamlService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -17,10 +19,13 @@ public class PipelineController {
 
     private final PipelineService pipelineService;
     private final PipelineYamlService pipelineYamlService;
+    private final RunService runService;
 
-    public PipelineController(PipelineService pipelineService, PipelineYamlService pipelineYamlService) {
+    public PipelineController(PipelineService pipelineService, PipelineYamlService pipelineYamlService,
+                              RunService runService) {
         this.pipelineService = pipelineService;
         this.pipelineYamlService = pipelineYamlService;
+        this.runService = runService;
     }
 
     @PostMapping
@@ -47,6 +52,20 @@ public class PipelineController {
         return ResponseEntity.ok(versions.stream().map(PipelineVersionResponse::from).toList());
     }
 
+    @GetMapping("/{id}/versions/{versionId}")
+    public ResponseEntity<PipelineVersionDetailResponse> getVersion(
+            @PathVariable UUID id, @PathVariable UUID versionId) {
+        var version = pipelineService.findVersionById(id, versionId);
+        return ResponseEntity.ok(PipelineVersionDetailResponse.from(version));
+    }
+
+    @GetMapping("/{id}/runs")
+    public ResponseEntity<List<RunResponse>> getRuns(@PathVariable UUID id) {
+        pipelineService.findById(id);
+        var runs = runService.getRunsByPipelineId(id);
+        return ResponseEntity.ok(runs.stream().map(RunResponse::from).toList());
+    }
+
     @PostMapping("/{id}/versions")
     public ResponseEntity<PipelineVersionResponse> submitYaml(
             @PathVariable UUID id,
@@ -61,5 +80,22 @@ public class PipelineController {
             @Valid @RequestBody SubmitPipelineYamlRequest request) {
         var version = pipelineYamlService.validateAndSubmitToProject(projectId, request.yamlContent(), null);
         return ResponseEntity.status(HttpStatus.CREATED).body(PipelineVersionResponse.from(version));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<PipelineResponse> update(@PathVariable UUID id,
+                                                   @Valid @RequestBody UpdatePipelineRequest request) {
+        Pipeline.PipelineStatus status = null;
+        if (request.status() != null) {
+            status = Pipeline.PipelineStatus.valueOf(request.status());
+        }
+        var pipeline = pipelineService.update(id, request.name(), request.description(), status);
+        return ResponseEntity.ok(PipelineResponse.from(pipeline));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        pipelineService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -56,6 +56,16 @@ public class PipelineService {
         return pipelineVersionRepository.findByPipelineIdOrderByVersionDesc(pipelineId);
     }
 
+    @Transactional(readOnly = true)
+    public PipelineVersion findVersionById(UUID pipelineId, UUID versionId) {
+        PipelineVersion version = pipelineVersionRepository.findById(versionId)
+                .orElseThrow(() -> new ResourceNotFoundException("PipelineVersion not found with id: " + versionId));
+        if (!version.getPipeline().getId().equals(pipelineId)) {
+            throw new ResourceNotFoundException("PipelineVersion not found for pipeline " + pipelineId);
+        }
+        return version;
+    }
+
     public PipelineVersion addVersion(UUID pipelineId, String yamlContent, String commitSha, String createdBy) {
         Pipeline pipeline = findById(pipelineId);
 
@@ -67,5 +77,24 @@ public class PipelineService {
 
         PipelineVersion version = new PipelineVersion(pipeline, maxVersion + 1, yamlContent, commitSha, createdBy);
         return pipelineVersionRepository.save(version);
+    }
+
+    public Pipeline update(UUID id, String name, String description, Pipeline.PipelineStatus status) {
+        Pipeline pipeline = findById(id);
+        if (name != null && !name.isBlank()) {
+            pipeline.setName(name);
+        }
+        if (description != null) {
+            pipeline.setDescription(description);
+        }
+        if (status != null) {
+            pipeline.setStatus(status);
+        }
+        return pipelineRepository.save(pipeline);
+    }
+
+    public void delete(UUID id) {
+        Pipeline pipeline = findById(id);
+        pipelineRepository.delete(pipeline);
     }
 }

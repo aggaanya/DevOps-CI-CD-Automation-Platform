@@ -2,6 +2,7 @@ package com.cicd.platform.controlplane.pipeline.parser;
 
 import com.cicd.platform.controlplane.pipeline.config.PipelineConfig;
 import com.cicd.platform.controlplane.pipeline.config.PipelineRoot;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.LoaderOptions;
@@ -9,9 +10,12 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.error.YAMLException;
 
+import java.util.Map;
+
 public class PipelineYamlParser {
 
     private static final Logger log = LoggerFactory.getLogger(PipelineYamlParser.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Yaml yaml;
 
@@ -19,6 +23,19 @@ public class PipelineYamlParser {
         LoaderOptions options = new LoaderOptions();
         Constructor constructor = new Constructor(PipelineRoot.class, options);
         this.yaml = new Yaml(constructor);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> safeParseJson(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse JSON payload: {}", e.getMessage());
+            return null;
+        }
     }
 
     public PipelineConfig parse(String yamlContent) {
