@@ -63,6 +63,10 @@ worker:
     docker-network: ${WORKER_SANDBOX_DOCKER_NETWORK:}
     run-as-user: ${WORKER_SANDBOX_USER:}
     container-workspace-path: ${WORKER_SANDBOX_CONTAINER_WORKSPACE:/workspace}
+    docker-memory-limit: ${WORKER_DOCKER_MEMORY_LIMIT:512m}
+    docker-cpu-count: ${WORKER_DOCKER_CPU_COUNT:1}
+    docker-read-only-root: ${WORKER_DOCKER_READ_ONLY_ROOT:true}
+    docker-no-internet: ${WORKER_DOCKER_NO_INTERNET:false}
 
 logging:
   pattern:

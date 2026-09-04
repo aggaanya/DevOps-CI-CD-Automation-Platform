@@ -2,6 +2,7 @@ package com.cicd.platform.controlplane.api.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
@@ -10,6 +11,7 @@ public record CreateRepositoryRequest(
         UUID projectId,
 
         @NotBlank(message = "Provider is required")
+        @Pattern(regexp = "GITHUB", message = "Only GITHUB provider is supported")
         String provider,
 
         @NotBlank(message = "Repository URL is required")

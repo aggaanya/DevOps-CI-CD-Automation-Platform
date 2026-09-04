@@ -98,6 +98,33 @@ public class Repository {
 
     public Instant getUpdatedAt() { return updatedAt; }
 
+    /**
+     * Derives a Git clone URL from the stored repository URL.
+     * For GitHub, this is the same as the repository URL.
+     * Can be extended for other providers.
+     */
+    public String getCloneUrl() {
+        return normalizeUrl(this.repositoryUrl);
+    }
+
+    /**
+     * Normalizes a repository URL for consistent storage and comparison.
+     * Strips trailing slashes and .git suffix, lowercases the scheme and host.
+     */
+    public static String normalizeUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return url;
+        }
+        String normalized = url.trim();
+        if (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.toLowerCase().endsWith(".git")) {
+            normalized = normalized.substring(0, normalized.length() - 4);
+        }
+        return normalized;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

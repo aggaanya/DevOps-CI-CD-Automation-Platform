@@ -24,6 +24,12 @@ public class CommandSecurityPolicy {
             "AWS_SECRET", "PRIVATE_KEY", "CLIENT_SECRET", "API_KEY", "GITHUB_TOKEN",
             "GITLAB_TOKEN", "AZURE_CLIENT_SECRET", "AUTHORIZATION");
 
+    private static final Set<String> SENSITIVE_ENV_KEY_PATTERNS = Set.of(
+            "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "AWS_ACCESS_KEY",
+            "AWS_SECRET", "PRIVATE_KEY", "CLIENT_SECRET", "API_KEY", "GITHUB_TOKEN",
+            "GITLAB_TOKEN", "AZURE_CLIENT_SECRET", "AUTHORIZATION", "KEY", "CERT",
+            "CONNECTION_STRING", "DSN");
+
     private static final Pattern CATASTROPHIC = Pattern.compile(
             "(?i)((^|[;|&])\\s*rm\\s+(-\\S+\\s+)*[~/\\\\]|mkfs\\.|dd\\s+if=.*of=/(dev/)?sd|:\\{\\s*\\|\\s*:&};|"
                     + "chmod\\s+(-\\S+\\s+)*(777|a=rwx|a\\+rwx)\\s+[/~\\\\]|"
@@ -99,5 +105,30 @@ public class CommandSecurityPolicy {
             }
         }
         return false;
+    }
+
+    public String redactSecrets(String output, Map<String, String> environment) {
+        if (output == null || output.isEmpty() || environment == null || environment.isEmpty()) {
+            return output;
+        }
+        String redacted = output;
+        for (Map.Entry<String, String> entry : environment.entrySet()) {
+            String key = entry.getKey().toUpperCase();
+            String value = entry.getValue();
+            if (value == null || value.isEmpty() || value.length() < 4) {
+                continue;
+            }
+            boolean isSensitive = false;
+            for (String pattern : SENSITIVE_ENV_KEY_PATTERNS) {
+                if (key.contains(pattern)) {
+                    isSensitive = true;
+                    break;
+                }
+            }
+            if (isSensitive) {
+                redacted = redacted.replace(value, "<REDACTED>");
+            }
+        }
+        return redacted;
     }
 }

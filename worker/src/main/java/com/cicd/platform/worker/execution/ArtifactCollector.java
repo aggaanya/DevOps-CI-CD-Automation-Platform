@@ -74,8 +74,47 @@ public class ArtifactCollector {
     }
 
     private boolean matchesGlob(String name, String glob) {
-        String regex = glob.replace(".", "\\.").replace("*", ".*");
+        String regex = globToRegex(glob);
         return name.matches(regex);
+    }
+
+    private String globToRegex(String glob) {
+        StringBuilder regex = new StringBuilder();
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            switch (c) {
+                case '*':
+                    if (i + 1 < glob.length() && glob.charAt(i + 1) == '*') {
+                        regex.append(".*");
+                        i++;
+                        if (i + 1 < glob.length() && glob.charAt(i + 1) == '/') {
+                            i++;
+                        }
+                    } else {
+                        regex.append("[^/]*");
+                    }
+                    break;
+                case '.':
+                    regex.append("\\.");
+                    break;
+                case '?':
+                    regex.append("[^/]");
+                    break;
+                case '[':
+                    regex.append("[");
+                    break;
+                case ']':
+                    regex.append("]");
+                    break;
+                default:
+                    if ("+()^${}|.\\".indexOf(c) >= 0) {
+                        regex.append("\\");
+                    }
+                    regex.append(c);
+                    break;
+            }
+        }
+        return regex.toString();
     }
 
     private String sanitize(String name) {

@@ -116,10 +116,18 @@ public class JobMessageConsumer {
             }
 
             // ---------------------------------------------------------
-            // 4. Prevent duplicate execution
+            // 4. Prevent duplicate execution (atomic status transition)
             // ---------------------------------------------------------
 
-            if (job.getStatus() != PipelineJob.JobStatus.QUEUED) {
+            Instant runningAt = Instant.now();
+            int claimed = pipelineJobRepository.transitionStatus(
+                    message.jobId(),
+                    PipelineJob.JobStatus.QUEUED,
+                    PipelineJob.JobStatus.RUNNING,
+                    workspaceConfig.getWorkerId(),
+                    runningAt);
+
+            if (claimed == 0) {
 
                 log.info("[JOB_SKIPPED] jobId={}, status={}, reason=not-QUEUED",
                         message.jobId(), job.getStatus());
@@ -128,18 +136,12 @@ public class JobMessageConsumer {
                 return;
             }
 
-            // ---------------------------------------------------------
-            // 5. Mark job as RUNNING
-            // ---------------------------------------------------------
-
             job.setStatus(PipelineJob.JobStatus.RUNNING);
             job.setWorkerId(workspaceConfig.getWorkerId());
-            job.setStartedAt(Instant.now());
-
-            pipelineJobRepository.save(job);
+            job.setStartedAt(runningAt);
 
             // ---------------------------------------------------------
-            // 6. Find current JobAttempt
+            // 5. Find current JobAttempt
             // ---------------------------------------------------------
 
             JobAttempt attempt = findCurrentAttempt(
@@ -161,7 +163,7 @@ public class JobMessageConsumer {
             ExecutionMdc.setWorkerId(workspaceConfig.getWorkerId());
 
             // ---------------------------------------------------------
-            // 7. Create workspace
+            // 6. Create workspace
             // ---------------------------------------------------------
 
             Path workspacePath =
@@ -180,7 +182,7 @@ public class JobMessageConsumer {
                     workspaceManager.getArtifactsDir(workspacePath);
 
             // ---------------------------------------------------------
-            // 8. Build ExecutionContext
+            // 7. Build ExecutionContext
             // ---------------------------------------------------------
 
             ExecutionContext context = new ExecutionContext(
@@ -203,7 +205,7 @@ public class JobMessageConsumer {
             );
 
             // ---------------------------------------------------------
-            // 9. Execute job
+            // 8. Execute job
             // ---------------------------------------------------------
 
             log.info("[JOB_STARTED] jobId={}, jobName={}, jobType={}, attemptNumber={}, workerId={}",
@@ -216,7 +218,7 @@ public class JobMessageConsumer {
             int exitCode = success ? 0 : 1;
 
             // ---------------------------------------------------------
-            // 10. Update JobAttempt
+            // 9. Update JobAttempt
             // ---------------------------------------------------------
 
             if (attempt != null) {
@@ -235,7 +237,7 @@ public class JobMessageConsumer {
             }
 
             // ---------------------------------------------------------
-            // 11. Notify orchestrator
+            // 10. Notify orchestrator
             // ---------------------------------------------------------
 
             orchestrator.handleJobCompletion(
@@ -248,7 +250,7 @@ public class JobMessageConsumer {
             );
 
             // ---------------------------------------------------------
-            // 12. Acknowledge RabbitMQ message
+            // 11. Acknowledge RabbitMQ message
             // ---------------------------------------------------------
 
             channel.basicAck(deliveryTag, false);

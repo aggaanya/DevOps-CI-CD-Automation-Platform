@@ -71,6 +71,11 @@ webhook:
     secret: ${WEBHOOK_GITHUB_SECRET:}
   gitlab:
     secret: ${WEBHOOK_GITLAB_SECRET:}
+  max-payload-bytes: ${WEBHOOK_MAX_PAYLOAD_BYTES:1048576}
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000}
 
 logging:
   pattern:

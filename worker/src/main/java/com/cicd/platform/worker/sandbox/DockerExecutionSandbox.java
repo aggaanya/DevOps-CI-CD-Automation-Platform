@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -71,9 +72,29 @@ public class DockerExecutionSandbox implements ExecutionSandbox {
             commandLine.add("--user");
             commandLine.add(props.getSandbox().getRunAsUser());
         }
+        boolean networkSpecified = false;
         if (props.getSandbox().getDockerNetwork() != null && !props.getSandbox().getDockerNetwork().isBlank()) {
             commandLine.add("--network");
             commandLine.add(props.getSandbox().getDockerNetwork());
+            networkSpecified = true;
+        }
+        if (props.getSandbox().isDockerNoInternet() && !networkSpecified) {
+            commandLine.add("--network");
+            commandLine.add("none");
+        }
+        if (props.getSandbox().getDockerMemoryLimit() != null && !props.getSandbox().getDockerMemoryLimit().isBlank()) {
+            commandLine.add("--memory");
+            commandLine.add(props.getSandbox().getDockerMemoryLimit());
+        }
+        if (props.getSandbox().getDockerCpuCount() > 0) {
+            commandLine.add("--cpus");
+            commandLine.add(String.valueOf(props.getSandbox().getDockerCpuCount()));
+        }
+        if (props.getSandbox().isDockerReadOnlyRoot()) {
+            commandLine.add("--read-only");
+            String tmpfsMount = "tmpfs=/tmp:size=100m";
+            commandLine.add("--tmpfs");
+            commandLine.add(tmpfsMount);
         }
         commandLine.add("-v");
         commandLine.add(request.workspaceHost().toAbsolutePath() + ":" + props.getSandbox().getContainerWorkspacePath());
@@ -99,14 +120,15 @@ public class DockerExecutionSandbox implements ExecutionSandbox {
         }
 
         register(request.workspaceHost(), containerName);
+        Instant startedAt = Instant.now();
         try {
-            return runDockerProcess(commandLine, request, containerName);
+            return runDockerProcess(commandLine, request, containerName, startedAt);
         } finally {
             unregister(request.workspaceHost(), containerName);
         }
     }
 
-    private CommandResult runDockerProcess(List<String> commandLine, SandboxRequest request, String containerName) {
+    private CommandResult runDockerProcess(List<String> commandLine, SandboxRequest request, String containerName, Instant startedAt) {
         ProcessBuilder builder = new ProcessBuilder(commandLine);
         builder.redirectErrorStream(false);
         Map<String, String> env = builder.environment();
@@ -143,12 +165,13 @@ public class DockerExecutionSandbox implements ExecutionSandbox {
             stdout.join();
             stderr.join();
             int exitCode = process.exitValue();
+            Instant completedAt = Instant.now();
             if (exitCode == 0) {
                 return CommandResult.success(exitCode, stdout.getContent(), stderr.getContent(),
-                        null, null);
+                        startedAt, completedAt);
             }
             return CommandResult.failed(exitCode, stdout.getContent(), stderr.getContent(),
-                    null, null);
+                    startedAt, completedAt);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             process.destroyForcibly();

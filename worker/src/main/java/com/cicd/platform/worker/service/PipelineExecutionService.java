@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -74,6 +75,16 @@ public class PipelineExecutionService {
         this.pipelineExecutor = pipelineExecutor;
     }
 
+    @PreDestroy
+    public void shutdown() {
+        watchdog.shutdownNow();
+        try {
+            watchdog.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     public PipelineResult execute(PipelineJob job) {
         Instant startedAt = Instant.now();
         MdcContext.putJob(props.getId(), job.jobId(), job.pipelineId(),
@@ -99,11 +110,14 @@ public class PipelineExecutionService {
                 PipelineExecutor.ExecutionOutcome outcome = pipelineExecutor.execute(ctx, pipeline);
                 return buildResult(job, outcome.status(), outcome.stages(), startedAt,
                         commit.commitSha(), outcomeSummary(outcome));
+            } catch (Exception e) {
+                log.error("Execution failed for job {}: {}", job.jobId(), safeMessage(e));
+                throw e;
             } finally {
                 cancelWatchdog();
             }
         } catch (PipelineConfigurationException e) {
-            log.warn("Pipeline configuration error: {}", e.getMessage());
+            log.warn("Pipeline configuration error for job {}: {}", job.jobId(), e.getMessage());
             return buildResult(job, JobStatus.FAILED, List.of(), startedAt,
                     job.commitSha(), e.getMessage());
         } catch (GitOperationException | WorkspaceException | CommandExecutionException | PipelineExecutionException e) {
@@ -114,9 +128,17 @@ public class PipelineExecutionService {
             throw new PipelineExecutionException("Unexpected execution failure: " + safeMessage(e), e);
         } finally {
             if (ctx != null) {
-                ctx.logs().log("=== WORKSPACE CLEANUP ===");
+                try {
+                    ctx.logs().log("=== WORKSPACE CLEANUP ===");
+                } catch (Exception e) {
+                    log.debug("Failed to log cleanup message: {}", e.getMessage());
+                }
             }
-            workspaceManager.cleanup(workspace);
+            try {
+                workspaceManager.cleanup(workspace);
+            } catch (Exception e) {
+                log.warn("Failed to cleanup workspace for job {}: {}", job.jobId(), e.getMessage());
+            }
             MdcContext.clear();
         }
     }

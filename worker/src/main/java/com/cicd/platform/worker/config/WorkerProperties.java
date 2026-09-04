@@ -30,6 +30,7 @@ public class WorkerProperties {
             "pipeline.yml", ".cicd/pipeline.yml", "pipeline.yaml", ".cicd/pipeline.yaml");
     private Map<String, String> baseEnvironment = new HashMap<>();
     private long staleWorkspaceMaxAgeHours = 24L;
+    private long maxProcessTreeKillWaitMs = 5_000L;
 
     private final Rabbit rabbit = new Rabbit();
     private final Git git = new Git();
@@ -87,6 +88,11 @@ public class WorkerProperties {
     public long getStaleWorkspaceMaxAgeHours() { return staleWorkspaceMaxAgeHours; }
     public void setStaleWorkspaceMaxAgeHours(long staleWorkspaceMaxAgeHours) {
         this.staleWorkspaceMaxAgeHours = staleWorkspaceMaxAgeHours;
+    }
+
+    public long getMaxProcessTreeKillWaitMs() { return maxProcessTreeKillWaitMs; }
+    public void setMaxProcessTreeKillWaitMs(long maxProcessTreeKillWaitMs) {
+        this.maxProcessTreeKillWaitMs = maxProcessTreeKillWaitMs;
     }
 
     public Rabbit getRabbit() { return rabbit; }
@@ -152,6 +158,10 @@ public class WorkerProperties {
         private String runAsUser = "";
         private String containerWorkspacePath = "/workspace";
         private long dockerPullTimeoutMs = 10 * 60 * 1000L;
+        private String dockerMemoryLimit = "512m";
+        private int dockerCpuCount = 1;
+        private boolean dockerReadOnlyRoot = true;
+        private boolean dockerNoInternet = false;
 
         public String getMode() { return mode; }
         public void setMode(String mode) { this.mode = mode; }
@@ -167,5 +177,17 @@ public class WorkerProperties {
         }
         public long getDockerPullTimeoutMs() { return dockerPullTimeoutMs; }
         public void setDockerPullTimeoutMs(long dockerPullTimeoutMs) { this.dockerPullTimeoutMs = dockerPullTimeoutMs; }
+
+        public String getDockerMemoryLimit() { return dockerMemoryLimit; }
+        public void setDockerMemoryLimit(String dockerMemoryLimit) { this.dockerMemoryLimit = dockerMemoryLimit; }
+
+        public int getDockerCpuCount() { return dockerCpuCount; }
+        public void setDockerCpuCount(int dockerCpuCount) { this.dockerCpuCount = dockerCpuCount; }
+
+        public boolean isDockerReadOnlyRoot() { return dockerReadOnlyRoot; }
+        public void setDockerReadOnlyRoot(boolean dockerReadOnlyRoot) { this.dockerReadOnlyRoot = dockerReadOnlyRoot; }
+
+        public boolean isDockerNoInternet() { return dockerNoInternet; }
+        public void setDockerNoInternet(boolean dockerNoInternet) { this.dockerNoInternet = dockerNoInternet; }
     }
 }

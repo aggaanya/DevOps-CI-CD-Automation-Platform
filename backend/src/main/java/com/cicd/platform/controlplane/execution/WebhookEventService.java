@@ -3,13 +3,16 @@ package com.cicd.platform.controlplane.execution;
 import com.cicd.platform.controlplane.api.exception.ResourceNotFoundException;
 import com.cicd.platform.controlplane.domain.entity.*;
 import com.cicd.platform.controlplane.domain.repository.*;
+import jakarta.persistence.OptimisticLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -41,10 +44,10 @@ public class WebhookEventService {
 
     public WebhookEvent receiveEvent(String provider, String deliveryId, String eventType,
                                      UUID repositoryId, Map<String, Object> payload) {
-        if (webhookEventRepository.existsByProviderAndDeliveryId(provider, deliveryId)) {
+        Optional<WebhookEvent> existing = webhookEventRepository.findByProviderAndDeliveryId(provider, deliveryId);
+        if (existing.isPresent()) {
             log.info("Duplicate webhook event ignored: provider={}, deliveryId={}", provider, deliveryId);
-            return webhookEventRepository.findByProviderAndDeliveryId(provider, deliveryId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Webhook event not found"));
+            return existing.get();
         }
 
         Repository repository = null;
@@ -55,7 +58,14 @@ public class WebhookEventService {
 
         WebhookEvent event = new WebhookEvent(provider, deliveryId, eventType, repository, payload);
         event.setStatus(WebhookEvent.WebhookEventStatus.RECEIVED);
-        event = webhookEventRepository.save(event);
+
+        try {
+            event = webhookEventRepository.save(event);
+        } catch (DataIntegrityViolationException e) {
+            log.info("Concurrent duplicate webhook event detected: provider={}, deliveryId={}", provider, deliveryId);
+            return webhookEventRepository.findByProviderAndDeliveryId(provider, deliveryId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Webhook event not found"));
+        }
 
         log.info("Webhook event received: provider={}, eventType={}, deliveryId={}, repositoryId={}",
                 provider, eventType, deliveryId, repositoryId);
@@ -67,8 +77,21 @@ public class WebhookEventService {
         WebhookEvent event = webhookEventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Webhook event not found with id: " + eventId));
 
+        if (event.getStatus() == WebhookEvent.WebhookEventStatus.PROCESSED) {
+            log.info("Webhook event already processed, skipping: id={}, provider={}, deliveryId={}",
+                    eventId, event.getProvider(), event.getDeliveryId());
+            return event;
+        }
+
         event.setStatus(WebhookEvent.WebhookEventStatus.PROCESSING);
-        webhookEventRepository.save(event);
+
+        try {
+            webhookEventRepository.save(event);
+        } catch (OptimisticLockException e) {
+            log.info("Concurrent processEvent detected, re-fetching event: id={}", eventId);
+            return webhookEventRepository.findById(eventId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Webhook event not found with id: " + eventId));
+        }
 
         try {
             log.info("Processing webhook event: id={}, eventType={}", eventId, event.getEventType());

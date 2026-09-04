@@ -130,4 +130,61 @@ class GitOperationsTest {
 
         assertFalse(result);
     }
+
+    @Test
+    void cloneRepository_maliciousBranch_returnsFailureWithoutExecuting() {
+        StepExecutor mockExecutor = mock(StepExecutor.class);
+        GitOperations ops = new GitOperations(mockExecutor);
+        Path workDir = Path.of(System.getProperty("java.io.tmpdir"));
+
+        StepResult result = ops.cloneRepository(workDir,
+                "https://github.com/org/repo.git", "main; rm -rf /");
+
+        assertFalse(result.success());
+        assertEquals("invalid-branch", result.stepName());
+        verify(mockExecutor, never()).executeCommand(any(), anyString(), anyLong());
+    }
+
+    @Test
+    void cloneRepository_maliciousUrl_returnsFailureWithoutExecuting() {
+        StepExecutor mockExecutor = mock(StepExecutor.class);
+        GitOperations ops = new GitOperations(mockExecutor);
+        Path workDir = Path.of(System.getProperty("java.io.tmpdir"));
+
+        StepResult result = ops.cloneRepository(workDir,
+                "https://github.com/org/repo.git && rm -rf /", "main");
+
+        assertFalse(result.success());
+        assertEquals("invalid-git-url", result.stepName());
+        verify(mockExecutor, never()).executeCommand(any(), anyString(), anyLong());
+    }
+
+    @Test
+    void checkoutCommit_maliciousSha_returnsFailureWithoutExecuting() {
+        StepExecutor mockExecutor = mock(StepExecutor.class);
+        GitOperations ops = new GitOperations(mockExecutor);
+        Path workDir = Path.of(System.getProperty("java.io.tmpdir"));
+
+        StepResult result = ops.checkoutCommit(workDir, "abc123; rm -rf /");
+
+        assertFalse(result.success());
+        assertEquals("invalid-commit-sha", result.stepName());
+        verify(mockExecutor, never()).executeCommand(any(), anyString(), anyLong());
+    }
+
+    @Test
+    void cloneRepository_validInput_stillExecutes() {
+        StepExecutor mockExecutor = mock(StepExecutor.class);
+        GitOperations ops = new GitOperations(mockExecutor);
+        Path workDir = Path.of(System.getProperty("java.io.tmpdir"));
+        Instant now = Instant.now();
+
+        when(mockExecutor.executeCommand(eq(workDir), contains("clone"), eq(600L)))
+                .thenReturn(StepResult.success("clone", "", now, now));
+
+        StepResult result = ops.cloneRepository(workDir, "https://github.com/org/repo.git", "main");
+
+        assertTrue(result.success());
+        verify(mockExecutor).executeCommand(eq(workDir), contains("git clone"), eq(600L));
+    }
 }

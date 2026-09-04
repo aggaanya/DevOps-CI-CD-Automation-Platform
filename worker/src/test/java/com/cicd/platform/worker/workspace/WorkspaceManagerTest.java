@@ -11,6 +11,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -42,6 +44,23 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void createsRunLevelIsolatedWorkspace() {
+        PipelineJob job = new PipelineJob("job-1", "abc", "pipeline-1",
+                "https://github.com/org/repo.git", "3c547cb", "main", null, null, null, Instant.now());
+        Workspace workspace = manager.create(job);
+        assertTrue(workspace.root().startsWith(tempDir.resolve("run-abc")));
+        assertEquals("job-job-1", workspace.root().getFileName().toString());
+    }
+
+    @Test
+    void createsJobOnlyWorkspaceWhenNoRunId() {
+        PipelineJob job = new PipelineJob("job-1", null, "pipeline-1",
+                "https://github.com/org/repo.git", "3c547cb", "main", null, null, null, Instant.now());
+        Workspace workspace = manager.create(job);
+        assertTrue(workspace.root().startsWith(tempDir.resolve("job-job-1")));
+    }
+
+    @Test
     void cleanupRemovesWorkspace() {
         Workspace workspace = manager.create(TestData.validJob());
         assertTrue(Files.exists(workspace.root()));
@@ -59,6 +78,13 @@ class WorkspaceManagerTest {
     @Test
     void rejectsNullJobId() {
         PipelineJob malicious = new PipelineJob(null, "pipeline-1",
+                "https://github.com/org/repo.git", "3c547cb", "main", null, null, null, null);
+        assertThrows(WorkspaceException.class, () -> manager.create(malicious));
+    }
+
+    @Test
+    void rejectsPathTraversalRunId() {
+        PipelineJob malicious = new PipelineJob("job-1", "../escape", "pipeline-1",
                 "https://github.com/org/repo.git", "3c547cb", "main", null, null, null, null);
         assertThrows(WorkspaceException.class, () -> manager.create(malicious));
     }

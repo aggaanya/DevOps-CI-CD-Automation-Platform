@@ -33,6 +33,7 @@ public class WorkspaceManager {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
     private static final Pattern JOB_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
+    private static final Pattern RUN_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
 
     private final WorkerProperties props;
 
@@ -57,12 +58,20 @@ public class WorkspaceManager {
 
     public Workspace create(PipelineJob job) {
         String safeJobId = sanitizeJobId(job.jobId());
-        Path root = props.getWorkspaceRoot().resolve("job-" + safeJobId);
+        String safeRunId = job.runId() != null ? sanitizeRunId(job.runId()) : null;
+
+        Path root;
+        if (safeRunId != null) {
+            root = props.getWorkspaceRoot().resolve("run-" + safeRunId).resolve("job-" + safeJobId);
+        } else {
+            root = props.getWorkspaceRoot().resolve("job-" + safeJobId);
+        }
+
         try {
             Files.createDirectories(root.resolve("repo"));
             Files.createDirectories(root.resolve("logs"));
             Files.createDirectories(root.resolve("artifacts"));
-            log.info("Created workspace {}", root);
+            log.info("Created workspace {} (runId={})", root, safeRunId);
             return new Workspace(safeJobId, root, root.resolve("repo"), root.resolve("logs"), root.resolve("artifacts"));
         } catch (IOException e) {
             throw new WorkspaceException("Cannot create workspace for job " + safeJobId + ": " + e.getMessage(), e);
@@ -104,6 +113,14 @@ public class WorkspaceManager {
         return jobId;
     }
 
+    private String sanitizeRunId(String runId) {
+        if (runId == null || !RUN_ID_PATTERN.matcher(runId).matches()) {
+            throw new WorkspaceException(
+                    "Invalid runId '" + runId + "'. Allowed: 1-128 chars, letters, digits, '.', '_', '-'");
+        }
+        return runId;
+    }
+
     private void sweepStaleWorkspaces() {
         Path root = props.getWorkspaceRoot();
         if (!Files.isDirectory(root)) {
@@ -113,20 +130,52 @@ public class WorkspaceManager {
         FileTime cutoff = FileTime.fromMillis(Instant.now().minus(maxAge).toEpochMilli());
         try (Stream<Path> children = Files.list(root)) {
             children.filter(Files::isDirectory)
-                    .filter(p -> p.getFileName().toString().startsWith("job-"))
                     .forEach(p -> {
-                        try {
-                            if (Files.getLastModifiedTime(p).compareTo(cutoff) < 0) {
-                                log.warn("Sweeping stale workspace {}", p);
-                                cleanup(new Workspace("sweep", p, p.resolve("repo"), p.resolve("logs"),
-                                        p.resolve("artifacts")));
-                            }
-                        } catch (IOException e) {
-                            log.debug("Cannot inspect workspace {}: {}", p, e.getMessage());
+                        String dirName = p.getFileName().toString();
+                        if (dirName.startsWith("job-")) {
+                            sweepWorkspace(p, cutoff);
+                        } else if (dirName.startsWith("run-")) {
+                            sweepRunDirectory(p, cutoff);
                         }
                     });
         } catch (IOException e) {
             log.warn("Failed to sweep stale workspaces: {}", e.getMessage());
+        }
+    }
+
+    private void sweepRunDirectory(Path runDir, FileTime cutoff) {
+        try (Stream<Path> children = Files.list(runDir)) {
+            children.filter(Files::isDirectory)
+                    .filter(p -> p.getFileName().toString().startsWith("job-"))
+                    .forEach(p -> sweepWorkspace(p, cutoff));
+        } catch (IOException e) {
+            log.debug("Cannot list run directory {}: {}", runDir, e.getMessage());
+        }
+        try {
+            if (Files.getLastModifiedTime(runDir).compareTo(cutoff) < 0) {
+                boolean empty;
+                try (Stream<Path> remaining = Files.list(runDir)) {
+                    empty = remaining.findFirst().isEmpty();
+                }
+                if (empty) {
+                    log.warn("Sweeping empty stale run directory {}", runDir);
+                    Files.deleteIfExists(runDir);
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Cannot inspect run directory {}: {}", runDir, e.getMessage());
+        }
+    }
+
+    private void sweepWorkspace(Path p, FileTime cutoff) {
+        try {
+            if (Files.getLastModifiedTime(p).compareTo(cutoff) < 0) {
+                log.warn("Sweeping stale workspace {}", p);
+                cleanup(new Workspace("sweep", p, p.resolve("repo"), p.resolve("logs"),
+                        p.resolve("artifacts")));
+            }
+        } catch (IOException e) {
+            log.debug("Cannot inspect workspace {}: {}", p, e.getMessage());
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.cicd.platform.controlplane.execution.worker;
 
+import com.cicd.platform.controlplane.execution.ExecutionInputValidator;
 import com.cicd.platform.controlplane.execution.StepResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,12 +37,27 @@ public class GitOperations {
 
     public StepResult cloneRepository(Path workDir, String gitUrl, String branch) {
         String safeUrl = sanitizeUrl(gitUrl);
+        if (!ExecutionInputValidator.isValidGitUrl(gitUrl)) {
+            log.warn("Rejected invalid git URL during clone: {}", safeUrl);
+            return StepResult.failure("invalid-git-url", -1,
+                    "Invalid git URL: " + safeUrl, Instant.now(), Instant.now());
+        }
+        if (!ExecutionInputValidator.isValidBranch(branch)) {
+            log.warn("Rejected invalid branch during clone: {}", branch);
+            return StepResult.failure("invalid-branch", -1,
+                    "Invalid branch name: " + branch, Instant.now(), Instant.now());
+        }
         String command = "git clone --branch " + branch + " --single-branch " + gitUrl + " .";
         log.info("Cloning {} (branch={}) into {}", safeUrl, branch, workDir);
         return stepExecutor.executeCommand(workDir, command, 600);
     }
 
     public StepResult checkoutCommit(Path workDir, String commitSha) {
+        if (!ExecutionInputValidator.isValidCommitSha(commitSha)) {
+            log.warn("Rejected invalid commit SHA during checkout: {}", commitSha);
+            return StepResult.failure("invalid-commit-sha", -1,
+                    "Invalid commit SHA: " + commitSha, Instant.now(), Instant.now());
+        }
         String command = "git checkout " + commitSha;
         return stepExecutor.executeCommand(workDir, command, 60);
     }

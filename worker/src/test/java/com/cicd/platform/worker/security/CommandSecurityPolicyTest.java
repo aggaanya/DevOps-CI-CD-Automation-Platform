@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class CommandSecurityPolicyTest {
@@ -82,5 +83,47 @@ class CommandSecurityPolicyTest {
     @Test
     void disabledModeAcceptsAnything() {
         assertDoesNotThrow(() -> policy("DISABLED").validateCommand("rm -rf /"));
+    }
+
+    @Test
+    void redactsSecretValuesFromOutput() {
+        CommandSecurityPolicy p = policy("STRICT");
+        Map<String, String> env = Map.of("GITHUB_TOKEN", "ghp_secret123", "JAVA_HOME", "/opt/jdk");
+        String output = "Using token ghp_secret123 for authentication";
+        String redacted = p.redactSecrets(output, env);
+        assertEquals("Using token <REDACTED> for authentication", redacted);
+    }
+
+    @Test
+    void redactsPasswordFromOutput() {
+        CommandSecurityPolicy p = policy("STRICT");
+        Map<String, String> env = Map.of("DB_PASSWORD", "mydbpass42");
+        String output = "Connecting with password mydbpass42";
+        String redacted = p.redactSecrets(output, env);
+        assertEquals("Connecting with password <REDACTED>", redacted);
+    }
+
+    @Test
+    void doesNotRedactNonSensitiveValues() {
+        CommandSecurityPolicy p = policy("STRICT");
+        Map<String, String> env = Map.of("JAVA_HOME", "/opt/jdk");
+        String output = "JAVA_HOME is /opt/jdk";
+        String redacted = p.redactSecrets(output, env);
+        assertEquals("JAVA_HOME is /opt/jdk", redacted);
+    }
+
+    @Test
+    void handlesNullOutputGracefully() {
+        CommandSecurityPolicy p = policy("STRICT");
+        assertEquals(null, p.redactSecrets(null, Map.of("TOKEN", "abc")));
+    }
+
+    @Test
+    void handlesShortSecretValues() {
+        CommandSecurityPolicy p = policy("STRICT");
+        Map<String, String> env = Map.of("TOKEN", "ab");
+        String output = "Token value ab present";
+        String redacted = p.redactSecrets(output, env);
+        assertEquals("Token value ab present", redacted);
     }
 }

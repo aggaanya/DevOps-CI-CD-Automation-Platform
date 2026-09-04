@@ -13,6 +13,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +24,8 @@ public class WebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
 
+    private static final int DEFAULT_MAX_PAYLOAD_BYTES = 1_048_576;
+
     private final WebhookEventService webhookEventService;
 
     @Value("${webhook.github.secret:}")
@@ -30,6 +33,9 @@ public class WebhookController {
 
     @Value("${webhook.gitlab.secret:}")
     private String gitlabSecret;
+
+    @Value("${webhook.max-payload-bytes:" + DEFAULT_MAX_PAYLOAD_BYTES + "}")
+    private int maxPayloadBytes;
 
     public WebhookController(WebhookEventService webhookEventService) {
         this.webhookEventService = webhookEventService;
@@ -45,6 +51,16 @@ public class WebhookController {
             @RequestHeader(value = "X-Gitlab-Token", required = false) String gitlabToken,
             @RequestBody String rawBody,
             @RequestParam(required = false) UUID repositoryId) {
+
+        if (!isSupportedProvider(provider)) {
+            log.warn("Unsupported webhook provider: {}", provider);
+            return ResponseEntity.badRequest().build();
+        }
+
+        if (exceedsMaxPayloadSize(rawBody)) {
+            log.warn("Webhook payload too large for provider={}", provider);
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
+        }
 
         Map<String, Object> payload = com.cicd.platform.controlplane.pipeline.parser.PipelineYamlParser
                 .safeParseJson(rawBody);
@@ -67,13 +83,17 @@ public class WebhookController {
         WebhookEvent event = webhookEventService.receiveEvent(provider, deliveryId, eventType, repositoryId, payload);
         webhookEventService.processEvent(event.getId());
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(WebhookEventResponse.from(event));
+        return ResponseEntity.accepted().body(WebhookEventResponse.from(event));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<WebhookEventResponse> getEvent(@PathVariable UUID id) {
         WebhookEvent event = webhookEventService.getEvent(id);
         return ResponseEntity.ok(WebhookEventResponse.from(event));
+    }
+
+    private boolean isSupportedProvider(String provider) {
+        return "github".equalsIgnoreCase(provider) || "gitlab".equalsIgnoreCase(provider);
     }
 
     private boolean verifySignature(String provider, String rawBody,
@@ -87,17 +107,21 @@ public class WebhookController {
 
     private boolean verifyGitHubSignature(String rawBody, String signature) {
         if (githubSecret == null || githubSecret.isBlank()) {
-            return true;
+            log.warn("GitHub webhook secret not configured, rejecting request");
+            return false;
         }
         if (signature == null || signature.isBlank()) {
+            return false;
+        }
+        if (!isValidSignatureFormat(signature)) {
             return false;
         }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(githubSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] hash = mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8));
-            String expected = "sha256=" + bytesToHex(hash);
-            return constantTimeEquals(expected, signature);
+            byte[] expectedBytes = mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8));
+            byte[] providedBytes = hexToBytes(signature.substring("sha256=".length()));
+            return MessageDigest.isEqual(expectedBytes, providedBytes);
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             log.error("Failed to verify GitHub webhook signature", e);
             return false;
@@ -106,28 +130,47 @@ public class WebhookController {
 
     private boolean verifyGitlabToken(String token) {
         if (gitlabSecret == null || gitlabSecret.isBlank()) {
-            return true;
-        }
-        return gitlabSecret.equals(token);
-    }
-
-    private boolean constantTimeEquals(String a, String b) {
-        if (a.length() != b.length()) {
+            log.warn("GitLab webhook secret not configured, rejecting request");
             return false;
         }
-        int result = 0;
-        for (int i = 0; i < a.length(); i++) {
-            result |= a.charAt(i) ^ b.charAt(i);
+        if (token == null || token.isBlank()) {
+            return false;
         }
-        return result == 0;
+        return MessageDigest.isEqual(
+                gitlabSecret.getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8));
     }
 
-    private String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
+    private boolean exceedsMaxPayloadSize(String rawBody) {
+        return rawBody != null
+                && rawBody.getBytes(StandardCharsets.UTF_8).length > maxPayloadBytes;
+    }
+
+    private boolean isValidSignatureFormat(String signature) {
+        if (!signature.startsWith("sha256=")) {
+            return false;
         }
-        return sb.toString();
+        String hexPart = signature.substring("sha256=".length());
+        if (hexPart.length() != 64) {
+            return false;
+        }
+        for (int i = 0; i < hexPart.length(); i++) {
+            char c = hexPart.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private byte[] hexToBytes(String hex) {
+        int len = hex.length();
+        byte[] bytes = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            bytes[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
+        }
+        return bytes;
     }
 
     private String resolveEventType(String provider, String githubEvent, String gitlabEvent, Map<String, Object> payload) {

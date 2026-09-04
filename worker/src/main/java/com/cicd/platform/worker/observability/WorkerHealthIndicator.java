@@ -17,17 +17,19 @@ public class WorkerHealthIndicator implements HealthIndicator {
 
     private final ConnectionFactory connectionFactory;
     private final WorkerProperties props;
+    private final ExecutionMetrics metrics;
 
-    public WorkerHealthIndicator(ConnectionFactory connectionFactory, WorkerProperties props) {
+    public WorkerHealthIndicator(ConnectionFactory connectionFactory, WorkerProperties props, ExecutionMetrics metrics) {
         this.connectionFactory = connectionFactory;
         this.props = props;
+        this.metrics = metrics;
     }
 
     @Override
     public Health health() {
         Health.Builder builder = Health.up();
         builder.withDetail("workerId", props.getId());
-        builder.withDetail("runningJobs", 0);
+        builder.withDetail("runningJobs", metrics.running());
 
         boolean workspaceWritable = checkWorkspace();
         boolean rabbitUp = checkRabbit();
@@ -52,7 +54,12 @@ public class WorkerHealthIndicator implements HealthIndicator {
 
     private boolean checkRabbit() {
         try {
-            return connectionFactory.createConnection().isOpen();
+            var connection = connectionFactory.createConnection();
+            try {
+                return connection.isOpen();
+            } finally {
+                connection.close();
+            }
         } catch (Exception e) {
             return false;
         }

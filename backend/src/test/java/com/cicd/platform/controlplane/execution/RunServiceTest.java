@@ -65,6 +65,22 @@ class RunServiceTest {
     }
 
     @Test
+    void triggerRun_maliciousCommitSha_rejectsInput() {
+        assertThrows(BusinessRuleException.class,
+                () -> runService.triggerRun(UUID.randomUUID(), "abc123; rm -rf /", "main", null, "alice"));
+
+        verifyNoInteractions(pipelineVersionRepository, pipelineRunRepository, orchestrator);
+    }
+
+    @Test
+    void triggerRun_maliciousBranch_rejectsInput() {
+        assertThrows(BusinessRuleException.class,
+                () -> runService.triggerRun(UUID.randomUUID(), "sha123", "main; rm -rf /", null, "alice"));
+
+        verifyNoInteractions(pipelineVersionRepository, pipelineRunRepository, orchestrator);
+    }
+
+    @Test
     void triggerRun_versionNotFound_throwsException() {
         UUID versionId = UUID.randomUUID();
         when(pipelineVersionRepository.findById(versionId)).thenReturn(Optional.empty());

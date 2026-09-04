@@ -43,7 +43,8 @@ public class ExecutionMetrics {
         completedByStatus.computeIfAbsent(status, s -> Counter.builder("cicd.jobs.completed")
                         .description("Pipeline jobs completed")
                         .tag("status", s.name())
-                        .register(registry));
+                        .register(registry))
+                .increment();
     }
 
     public void countMalformed() {

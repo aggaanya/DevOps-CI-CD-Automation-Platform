@@ -133,7 +133,12 @@ public class StepExecutor {
         if (job.workingDirectory() == null || job.workingDirectory().isBlank()) {
             return repo;
         }
-        Path workdir = repo.resolve(job.workingDirectory()).normalize();
+        String workDir = job.workingDirectory().trim();
+        if (workDir.contains("..") || workDir.contains("~")) {
+            throw new SecurityViolationException(
+                    "workingDirectory contains path traversal: " + workDir);
+        }
+        Path workdir = repo.resolve(workDir).normalize();
         if (!workdir.startsWith(repo.normalize())) {
             throw new SecurityViolationException(
                     "workingDirectory escapes repository root: " + job.workingDirectory());
@@ -142,9 +147,11 @@ public class StepExecutor {
     }
 
     private void recordOutput(ExecutionContext ctx, CommandResult result) {
-        ctx.logs().appendOutput(result.stdout());
-        if (!result.stderr().isBlank()) {
-            ctx.logs().appendOutput("STDERR:\n" + result.stderr());
+        String stdout = securityPolicy.redactSecrets(result.stdout(), ctx.job().environment());
+        String stderr = securityPolicy.redactSecrets(result.stderr(), ctx.job().environment());
+        ctx.logs().appendOutput(stdout);
+        if (!stderr.isBlank()) {
+            ctx.logs().appendOutput("STDERR:\n" + stderr);
         }
         ctx.logs().log("Command exit code: " + result.exitCode() + " in "
                 + result.durationMs() + " ms");

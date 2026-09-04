@@ -1,0 +1,1 @@
+ALTER TABLE webhook_events ADD COLUMN version BIGINT DEFAULT 0;

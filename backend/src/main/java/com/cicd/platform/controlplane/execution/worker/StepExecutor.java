@@ -1,6 +1,7 @@
 package com.cicd.platform.controlplane.execution.worker;
 
 import com.cicd.platform.controlplane.execution.ExecutionContext;
+import com.cicd.platform.controlplane.execution.LogRedactor;
 import com.cicd.platform.controlplane.execution.StepResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,7 +65,7 @@ public class StepExecutor {
                     Instant.now());
 
         } catch (IOException e) {
-            log.error("Failed to execute command: {}", command, e);
+            log.error("Failed to execute command: {}", LogRedactor.redact(command), e);
             return StepResult.failure(
                     "io-error",
                     -1,
@@ -73,7 +74,7 @@ public class StepExecutor {
                     Instant.now());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Interrupted while executing command: {}", command, e);
+            log.error("Interrupted while executing command: {}", LogRedactor.redact(command), e);
             return StepResult.failure(
                     "interrupted",
                     -1,
@@ -95,11 +96,12 @@ public class StepExecutor {
             log.info("Executing step '{}' (no context)", stepName);
             Path workDir = Path.of(System.getProperty("java.io.tmpdir"));
             StepResult result = executeCommand(workDir, command, 3600);
-            if (result.success()) {
-                log.info("Step '{}' completed successfully (exitCode={})", stepName, result.exitCode());
-            } else {
-                log.warn("Step '{}' failed (exitCode={}, stderr={})", stepName, result.exitCode(), result.stderr());
-            }
+if (result.success()) {
+            log.info("Step '{}' completed successfully (exitCode={})", stepName, result.exitCode());
+        } else {
+            log.warn("Step '{}' failed (exitCode={}, stderr={})",
+                    stepName, result.exitCode(), LogRedactor.redact(result.stderr()));
+        }
             return result;
         }
 
@@ -113,7 +115,7 @@ public class StepExecutor {
                     stepName, ctx.jobName(), result.exitCode());
         } else {
             log.warn("Step '{}' failed for job '{}' (exitCode={}, stderr={})",
-                    stepName, ctx.jobName(), result.exitCode(), result.stderr());
+                    stepName, ctx.jobName(), result.exitCode(), LogRedactor.redact(result.stderr()));
         }
 
         return result;

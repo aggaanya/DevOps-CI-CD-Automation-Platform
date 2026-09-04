@@ -13,6 +13,7 @@ import java.util.Map;
  * open extension point for future fields (labels, priorities, requester, ...).</p>
  *
  * @param jobId          unique id of this execution (used for idempotency).
+ * @param runId          pipeline run id for run-level workspace isolation.
  * @param pipelineId     logical pipeline identifier the job belongs to.
  * @param repositoryUrl  git repository URL to clone.
  * @param commitSha      exact commit that must be built (never "latest").
@@ -25,6 +26,7 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PipelineJob(
         String jobId,
+        String runId,
         String pipelineId,
         String repositoryUrl,
         String commitSha,
@@ -37,5 +39,13 @@ public record PipelineJob(
     public PipelineJob {
         environment = environment == null ? Map.of() : Map.copyOf(environment);
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+    }
+
+    public PipelineJob(String jobId, String pipelineId, String repositoryUrl,
+                       String commitSha, String branch, String pipelineFile,
+                       Map<String, String> environment, Map<String, Object> metadata,
+                       Instant createdAt) {
+        this(jobId, null, pipelineId, repositoryUrl, commitSha, branch, pipelineFile,
+                environment, metadata, createdAt);
     }
 }

@@ -68,6 +68,7 @@ class EndToEndExecutionTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(any(), any(), any(), any(), any())).thenReturn(1);
         when(workspaceConfig.getWorkerId()).thenReturn("worker-e2e");
         when(workspaceConfig.getTimeoutSeconds()).thenReturn(3600L);
         when(workspaceManager.createWorkspace(runId, jobId))
@@ -109,6 +110,7 @@ class EndToEndExecutionTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(any(), any(), any(), any(), any())).thenReturn(1);
         when(workspaceConfig.getWorkerId()).thenReturn("worker-1");
         when(workspaceConfig.getTimeoutSeconds()).thenReturn(600L);
         when(workspaceManager.createWorkspace(runId, jobId))
@@ -152,6 +154,7 @@ class EndToEndExecutionTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(any(), any(), any(), any(), any())).thenReturn(1);
         when(workspaceConfig.getWorkerId()).thenReturn("worker-1");
         when(workspaceConfig.getTimeoutSeconds()).thenReturn(3600L);
         when(workspaceManager.createWorkspace(runId, jobId))
@@ -194,6 +197,7 @@ class EndToEndExecutionTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(any(), any(), any(), any(), any())).thenReturn(1);
         when(workspaceConfig.getWorkerId()).thenReturn("worker-1");
         when(workspaceConfig.getTimeoutSeconds()).thenReturn(600L);
         when(workspaceManager.createWorkspace(runId, jobId)).thenReturn(Path.of("/tmp/ws"));
@@ -370,6 +374,7 @@ class EndToEndExecutionTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(any(), any(), any(), any(), any())).thenReturn(1);
         when(workspaceConfig.getWorkerId()).thenReturn("worker-1");
         when(workspaceConfig.getTimeoutSeconds()).thenReturn(3600L);
         when(workspaceManager.createWorkspace(runId, jobId))
@@ -408,6 +413,7 @@ class EndToEndExecutionTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(any(), any(), any(), any(), any())).thenReturn(1);
         when(workspaceConfig.getWorkerId()).thenReturn("worker-1");
         when(workspaceConfig.getTimeoutSeconds()).thenReturn(600L);
         when(workspaceManager.createWorkspace(runId, jobId)).thenReturn(Path.of("/tmp/ws"));

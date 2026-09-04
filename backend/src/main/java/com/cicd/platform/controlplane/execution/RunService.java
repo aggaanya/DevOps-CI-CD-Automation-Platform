@@ -52,6 +52,13 @@ public class RunService {
 
     public PipelineRun triggerRun(UUID pipelineVersionId, String commitSha, String branch,
                                   UUID repositoryId, String triggeredBy) {
+        if (!ExecutionInputValidator.isValidSafeToken(commitSha)) {
+            throw new BusinessRuleException("Commit SHA must be a valid git SHA");
+        }
+        if (!ExecutionInputValidator.isValidBranch(branch)) {
+            throw new BusinessRuleException("Branch contains invalid characters");
+        }
+
         PipelineVersion version = pipelineVersionRepository.findById(pipelineVersionId)
                 .orElseThrow(() -> new ResourceNotFoundException("PipelineVersion not found with id: " + pipelineVersionId));
 

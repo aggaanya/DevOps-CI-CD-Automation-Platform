@@ -1,6 +1,7 @@
 package com.cicd.platform.controlplane.domain.service;
 
 import com.cicd.platform.controlplane.api.exception.BusinessRuleException;
+import com.cicd.platform.controlplane.api.exception.ResourceConflictException;
 import com.cicd.platform.controlplane.api.exception.ResourceNotFoundException;
 import com.cicd.platform.controlplane.domain.entity.Project;
 import com.cicd.platform.controlplane.domain.entity.Repository;
@@ -10,12 +11,18 @@ import com.cicd.platform.controlplane.domain.repository.RepositoryRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 @Transactional
 public class RepositoryService {
+
+    private static final Pattern GITHUB_URL_PATTERN = Pattern.compile(
+            "^https?://github\\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(/.*)?$"
+    );
 
     private final RepositoryRepository repositoryRepository;
     private final ProjectRepository projectRepository;
@@ -30,6 +37,10 @@ public class RepositoryService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found with id: " + projectId));
 
+        if (repositoryName == null || repositoryName.isBlank()) {
+            throw new BusinessRuleException("Repository name cannot be blank");
+        }
+
         ProviderType providerType;
         try {
             providerType = ProviderType.valueOf(provider.toUpperCase());
@@ -38,9 +49,24 @@ public class RepositoryService {
                     "Unsupported provider: " + provider + ". Supported providers: GITHUB, GITLAB, BITBUCKET");
         }
 
+        if (providerType != ProviderType.GITHUB) {
+            throw new BusinessRuleException(
+                    "Only GITHUB provider is supported in this module. Provider: " + provider);
+        }
+
+        validateRepositoryUrl(repositoryUrl, providerType);
+
         String branch = (defaultBranch == null || defaultBranch.isBlank()) ? "main" : defaultBranch;
 
-        Repository repo = new Repository(project, providerType, repositoryUrl, repositoryName, branch);
+        String normalizedUrl = Repository.normalizeUrl(repositoryUrl);
+
+        repositoryRepository.findByProjectIdAndRepositoryUrl(projectId, normalizedUrl)
+                .ifPresent(existing -> {
+                    throw new ResourceConflictException(
+                            "Repository with URL '" + normalizedUrl + "' already exists in this project");
+                });
+
+        Repository repo = new Repository(project, providerType, normalizedUrl, repositoryName, branch);
         return repositoryRepository.save(repo);
     }
 
@@ -59,7 +85,17 @@ public class RepositoryService {
                              String defaultBranch, Repository.RepositoryStatus status) {
         Repository repo = findById(id);
         if (repositoryUrl != null && !repositoryUrl.isBlank()) {
-            repo.setRepositoryUrl(repositoryUrl);
+            validateRepositoryUrl(repositoryUrl, repo.getProvider());
+            String normalizedUrl = Repository.normalizeUrl(repositoryUrl);
+            repositoryRepository.findByProjectIdAndRepositoryUrl(
+                            repo.getProject().getId(), normalizedUrl)
+                    .ifPresent(existing -> {
+                        if (!existing.getId().equals(id)) {
+                            throw new ResourceConflictException(
+                                    "Repository with URL '" + normalizedUrl + "' already exists in this project");
+                        }
+                    });
+            repo.setRepositoryUrl(normalizedUrl);
         }
         if (repositoryName != null && !repositoryName.isBlank()) {
             repo.setRepositoryName(repositoryName);
@@ -76,5 +112,25 @@ public class RepositoryService {
     public void delete(UUID id) {
         Repository repo = findById(id);
         repositoryRepository.delete(repo);
+    }
+
+    private void validateRepositoryUrl(String url, ProviderType provider) {
+        if (url == null || url.isBlank()) {
+            throw new BusinessRuleException("Repository URL cannot be blank");
+        }
+
+        try {
+            URI uri = URI.create(url);
+            if (uri.getScheme() == null || uri.getHost() == null) {
+                throw new BusinessRuleException("Repository URL must be a valid URL");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new BusinessRuleException("Repository URL must be a valid URL: " + url);
+        }
+
+        if (provider == ProviderType.GITHUB && !GITHUB_URL_PATTERN.matcher(url).matches()) {
+            throw new BusinessRuleException(
+                    "Repository URL must be a valid GitHub repository URL (https://github.com/owner/repo)");
+        }
     }
 }
