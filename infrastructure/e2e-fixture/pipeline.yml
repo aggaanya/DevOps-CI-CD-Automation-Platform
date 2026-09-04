@@ -1,0 +1,11 @@
+pipeline:
+  name: phase6-fixture
+  stages:
+    - name: build
+      jobs:
+        - name: container-check
+          steps:
+            - run: "echo hello-from-phase6-worker-container"
+            - run: "pwd"
+            - run: "cat message.txt"
+            - run: "printf 'artifact-content' > artifact.txt && cat artifact.txt"

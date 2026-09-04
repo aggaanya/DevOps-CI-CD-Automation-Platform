@@ -101,6 +101,12 @@ class RabbitMQIntegrationTest {
 
         when(pipelineJobRepository.findById(jobId)).thenReturn(Optional.of(job));
         when(pipelineRunRepository.findById(runId)).thenReturn(Optional.of(run));
+        when(pipelineJobRepository.transitionStatus(
+                eq(jobId),
+                eq(PipelineJob.JobStatus.QUEUED),
+                eq(PipelineJob.JobStatus.RUNNING),
+                anyString(),
+                any())).thenReturn(1);
         when(workspaceManager.createWorkspace(runId, jobId))
                 .thenReturn(Path.of("/tmp/test-workspace"));
         when(workspaceManager.getWorkDir(any())).thenReturn(Path.of("/tmp/test-workspace/work"));

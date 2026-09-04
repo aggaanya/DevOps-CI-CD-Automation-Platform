@@ -8,7 +8,10 @@ RUN mvn -B -q clean package -DskipTests
 
 # Stage 2: minimal runtime image (non-root)
 FROM eclipse-temurin:21-jre
-RUN useradd --create-home --uid 10001 cicd \
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 cicd \
     && mkdir -p /app /data/workspaces \
     && chown -R cicd:cicd /app /data
 USER cicd

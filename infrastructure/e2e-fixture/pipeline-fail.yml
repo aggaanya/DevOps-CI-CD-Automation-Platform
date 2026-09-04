@@ -1,0 +1,9 @@
+pipeline:
+  name: phase6-fixture-fail
+  stages:
+    - name: build
+      jobs:
+        - name: failing-job
+          steps:
+            - run: "echo about-to-fail"
+            - run: "exit 3"

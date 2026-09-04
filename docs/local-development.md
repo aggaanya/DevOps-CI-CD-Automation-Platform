@@ -64,8 +64,8 @@ are safe local-development values; override them by creating `.env` from
 | `POSTGRES_PORT` | `5432` | host port |
 | `REDIS_PORT` | `6379` | host port |
 | `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` | `admin` / `admin` | Keycloak admin console |
-| `KEYCLOAK_PORT` | `8081` | host port |
-| `WORKER_PORT` | `8080` | host port |
+| `KEYCLOAK_PORT` | `8083` | host port |
+| `WORKER_PORT` | `8082` | host port (container port is `8080`) |
 | `WORKER_ID` | `worker-docker` | worker identity in results/logs |
 
 Note: `RABBITMQ_USERNAME`/`RABBITMQ_PASSWORD` drive both the broker's default
@@ -111,6 +111,30 @@ image has no `curl`/`wget`.
 | Keycloak `starting` | Cold start takes 30–90s | Wait; `docker compose ps` until healthy |
 | `docker compose` errors | Missing/invalid `.env` | Remove or fix `.env`; defaults are safe |
 | Stale data after config changes | Named volumes persist | `docker compose down -v` (wipes local data) |
+
+## Testing
+
+Run unit tests with Maven from each module:
+
+```bash
+cd backend && mvn -B test      # control plane
+cd worker  && mvn -B test      # worker
+```
+
+`RabbitMQIntegrationTest` (backend) publishes to the same `pipeline-jobs`
+queue that the running backend container's in-process consumer also reads
+from `localhost:5672`. To avoid the container stealing the test's messages,
+stop the backend container first:
+
+```bash
+docker compose stop backend
+cd backend && mvn -B test
+docker compose start backend
+```
+
+Worker integration tests (`RabbitMqFlowIT`, `CommandTimeoutIT`) run under
+`mvn -B verify` with Testcontainers (requires Docker) and local `mvn` on
+PATH.
 
 ## Limitations (local foundation only)
 

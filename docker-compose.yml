@@ -236,6 +236,21 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:80"
 
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1/"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 
   # ============================================================
   # Worker
