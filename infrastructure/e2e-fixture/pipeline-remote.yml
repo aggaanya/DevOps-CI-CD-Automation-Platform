@@ -1,0 +1,11 @@
+pipeline:
+  name: phase7-azure-fixture
+  stages:
+    - name: build
+      jobs:
+        - name: container-check
+          steps:
+            - run: "echo hello-from-azure-remote-worker"
+            - run: "pwd"
+            - run: "cat infrastructure/e2e-fixture/message.txt"
+            - run: "printf 'artifact-content' > artifact.txt && cat artifact.txt"

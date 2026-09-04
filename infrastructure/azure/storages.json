@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "type": "string" },
+    "storageAccountName": { "type": "string" },
+    "storageAccountKey": { "type": "securestring" },
+    "rabbitmqShareName": { "type": "string", "defaultValue": "rabbitmq-data" },
+    "workerShareName": { "type": "string", "defaultValue": "worker-workspaces" }
+  },
+  "variables": {
+    "rabbitmqStorageId": "[resourceId('Microsoft.App/managedEnvironments/storages', parameters('environmentName'), 'rabbitmq-data')]",
+    "workerStorageId": "[resourceId('Microsoft.App/managedEnvironments/storages', parameters('environmentName'), 'worker-workspaces')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/managedEnvironments/storages",
+      "apiVersion": "2024-02-02-preview",
+      "name": "[concat(parameters('environmentName'), '/rabbitmq-data')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "azureFile": {
+          "accountName": "[parameters('storageAccountName')]",
+          "accountKey": "[parameters('storageAccountKey')]",
+          "shareName": "[parameters('rabbitmqShareName')]",
+          "accessMode": "ReadWrite"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments/storages",
+      "apiVersion": "2024-02-02-preview",
+      "name": "[concat(parameters('environmentName'), '/worker-workspaces')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "azureFile": {
+          "accountName": "[parameters('storageAccountName')]",
+          "accountKey": "[parameters('storageAccountKey')]",
+          "shareName": "[parameters('workerShareName')]",
+          "accessMode": "ReadWrite"
+        }
+      }
+    }
+  ]
+}

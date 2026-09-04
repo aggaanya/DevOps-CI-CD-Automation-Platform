@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "type": "string" },
+    "appSubnetId": { "type": "string" },
+    "logAnalyticsCustomerId": { "type": "string" },
+    "logAnalyticsSharedKey": { "type": "securestring" },
+    "internalOnly": { "type": "bool", "defaultValue": true }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2024-02-02-preview",
+      "name": "[parameters('environmentName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[parameters('logAnalyticsCustomerId')]",
+            "sharedKey": "[parameters('logAnalyticsSharedKey')]"
+          }
+        },
+        "vnetConfiguration": {
+          "infrastructureSubnetId": "[parameters('appSubnetId')]",
+          "internal": "[parameters('internalOnly')]"
+        }
+      }
+    }
+  ]
+}

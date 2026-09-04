@@ -3,7 +3,7 @@ spring:
     name: cicd-control-plane
 
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:cicd}
+    url: ${POSTGRES_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:cicd}}
     username: ${POSTGRES_USER:cicd}
     password: ${POSTGRES_PASSWORD:cicd}
     driver-class-name: org.postgresql.Driver
@@ -50,6 +50,13 @@ execution:
     worker-id: ${WORKER_ID:worker-local}
     concurrency: ${WORKER_CONCURRENCY:1}
     prefetch: ${WORKER_PREFETCH:1}
+  results:
+    exchange: ${CICD_RESULTS_EXCHANGE:cicd.results.exchange}
+    queue: ${CICD_RESULT_QUEUE:cicd.results}
+    routing-key: ${CICD_RESULT_ROUTING_KEY:cicd.result}
+  trigger:
+    exchange: ${CICD_JOBS_EXCHANGE:cicd.jobs.exchange}
+    routing-key: ${CICD_JOB_ROUTING_KEY:cicd.job.submitted}
 
 management:
   endpoints:

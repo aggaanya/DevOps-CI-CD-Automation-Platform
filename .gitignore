@@ -30,3 +30,6 @@ Thumbs.db
 .terraform/
 *.tfvars
 !*.tfvars.example
+
+# Local deploy state (suffix, FQDNs — never commit)
+.state/

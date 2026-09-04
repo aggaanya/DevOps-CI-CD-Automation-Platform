@@ -1,0 +1,296 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "type": "string" },
+    "acrServer": { "type": "string" },
+    "imageTag": { "type": "string", "defaultValue": "latest" },
+    "appIdentityId": { "type": "string" },
+    "rabbitUserSecretUrl": { "type": "string" },
+    "rabbitPassSecretUrl": { "type": "string" },
+    "pgPasswordSecretUrl": { "type": "string" },
+    "pgFqdn": { "type": "string" },
+    "pgUser": { "type": "string" },
+    "pgDatabase": { "type": "string", "defaultValue": "cicd" }
+  },
+  "variables": {
+    "caeId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+    "rabbitFqdn": "[reference(resourceId('Microsoft.App/containerApps', 'rabbitmq'), '2024-02-02-preview').properties.configuration.ingress.fqdn]",
+    "backendFqdn": "[reference(resourceId('Microsoft.App/containerApps', 'backend'), '2024-02-02-preview').properties.configuration.ingress.fqdn]",
+    "frontendFqdn": "[reference(resourceId('Microsoft.App/containerApps', 'frontend'), '2024-02-02-preview').properties.configuration.ingress.fqdn]",
+    "backendImage": "[concat(parameters('acrServer'), '/cicd-backend:', parameters('imageTag'))]",
+    "workerImage": "[concat(parameters('acrServer'), '/cicd-worker:', parameters('imageTag'))]",
+    "frontendImage": "[concat(parameters('acrServer'), '/cicd-frontend:', parameters('imageTag'))]",
+    "pgUrl": "[concat('jdbc:postgresql://', parameters('pgFqdn'), ':5432/', parameters('pgDatabase'), '?sslmode=require')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-02-02-preview",
+      "name": "rabbitmq",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": { "[parameters('appIdentityId')]": {} }
+      },
+      "dependsOn": [ "[variables('caeId')]" ],
+      "properties": {
+        "managedEnvironmentId": "[variables('caeId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "secrets": [
+            { "name": "rabbit-user", "keyVaultUrl": "[parameters('rabbitUserSecretUrl')]", "identity": "[parameters('appIdentityId')]" },
+            { "name": "rabbit-pass", "keyVaultUrl": "[parameters('rabbitPassSecretUrl')]", "identity": "[parameters('appIdentityId')]" }
+          ],
+          "ingress": {
+            "external": false,
+            "targetPort": 15672,
+            "transport": "http",
+            "allowInsecure": false,
+            "additionalPortMappings": [
+              { "targetPort": 5672, "external": false }
+            ]
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "rabbitmq",
+              "image": "rabbitmq:3.13-management-alpine",
+              "resources": { "cpu": 0.5, "memory": "1Gi" },
+              "env": [
+                { "name": "RABBITMQ_DEFAULT_USER", "secretRef": "rabbit-user" },
+                { "name": "RABBITMQ_DEFAULT_PASS", "secretRef": "rabbit-pass" }
+              ],
+              "volumeMounts": [ { "volumeName": "rabbitmq-data", "mountPath": "/var/lib/rabbitmq" } ],
+              "probes": [
+                {
+                  "probeType": "Liveness",
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3,
+                  "tcpSocket": { "port": 5672 }
+                }
+              ]
+            }
+          ],
+          "volumes": [
+            { "name": "rabbitmq-data", "storageType": "AzureFile", "storageName": "rabbitmq-data" }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-02-02-preview",
+      "name": "backend",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": { "[parameters('appIdentityId')]": {} }
+      },
+      "dependsOn": [
+        "[variables('caeId')]",
+        "[resourceId('Microsoft.App/containerApps', 'rabbitmq')]",
+        "[resourceId('Microsoft.App/containerApps', 'frontend')]"
+      ],
+      "properties": {
+        "managedEnvironmentId": "[variables('caeId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "secrets": [
+            { "name": "pg-password", "keyVaultUrl": "[parameters('pgPasswordSecretUrl')]", "identity": "[parameters('appIdentityId')]" },
+            { "name": "rabbit-user", "keyVaultUrl": "[parameters('rabbitUserSecretUrl')]", "identity": "[parameters('appIdentityId')]" },
+            { "name": "rabbit-pass", "keyVaultUrl": "[parameters('rabbitPassSecretUrl')]", "identity": "[parameters('appIdentityId')]" }
+          ],
+          "registries": [
+            { "server": "[parameters('acrServer')]", "identity": "[parameters('appIdentityId')]" }
+          ],
+          "ingress": {
+            "external": false,
+            "targetPort": 8081,
+            "transport": "http",
+            "allowInsecure": true
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "backend",
+              "image": "[variables('backendImage')]",
+              "resources": { "cpu": 1.0, "memory": "2Gi" },
+              "env": [
+                { "name": "SERVER_PORT", "value": "8081" },
+                { "name": "POSTGRES_URL", "value": "[variables('pgUrl')]" },
+                { "name": "POSTGRES_USER", "value": "[parameters('pgUser')]" },
+                { "name": "POSTGRES_PASSWORD", "secretRef": "pg-password" },
+                { "name": "RABBITMQ_HOST", "value": "[variables('rabbitFqdn')]" },
+                { "name": "RABBITMQ_PORT", "value": "5672" },
+                { "name": "RABBITMQ_USERNAME", "secretRef": "rabbit-user" },
+                { "name": "RABBITMQ_PASSWORD", "secretRef": "rabbit-pass" },
+                { "name": "SPRING_JPA_HIBERNATE_DDL_AUTO", "value": "validate" },
+                { "name": "APP_CORS_ALLOWED_ORIGINS", "value": "[concat('https://', variables('frontendFqdn'))]" }
+              ],
+              "probes": [
+                {
+                  "probeType": "Liveness",
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3,
+                  "httpGet": { "path": "/actuator/health", "port": 8081 }
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-02-02-preview",
+      "name": "worker",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": { "[parameters('appIdentityId')]": {} }
+      },
+      "dependsOn": [
+        "[variables('caeId')]",
+        "[resourceId('Microsoft.App/containerApps', 'rabbitmq')]"
+      ],
+      "properties": {
+        "managedEnvironmentId": "[variables('caeId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "secrets": [
+            { "name": "rabbit-user", "keyVaultUrl": "[parameters('rabbitUserSecretUrl')]", "identity": "[parameters('appIdentityId')]" },
+            { "name": "rabbit-pass", "keyVaultUrl": "[parameters('rabbitPassSecretUrl')]", "identity": "[parameters('appIdentityId')]" }
+          ],
+          "registries": [
+            { "server": "[parameters('acrServer')]", "identity": "[parameters('appIdentityId')]" }
+          ],
+          "ingress": {
+            "external": false,
+            "targetPort": 8080,
+            "transport": "http",
+            "allowInsecure": true
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "worker",
+              "image": "[variables('workerImage')]",
+              "resources": { "cpu": 1.0, "memory": "2Gi" },
+              "env": [
+                { "name": "RABBITMQ_HOST", "value": "[variables('rabbitFqdn')]" },
+                { "name": "RABBITMQ_PORT", "value": "5672" },
+                { "name": "RABBITMQ_USERNAME", "secretRef": "rabbit-user" },
+                { "name": "RABBITMQ_PASSWORD", "secretRef": "rabbit-pass" },
+                { "name": "WORKER_ID", "value": "worker-azure" },
+                { "name": "WORKSPACE_ROOT", "value": "/data/workspaces" },
+                { "name": "WORKER_MAX_CONCURRENCY", "value": "2" },
+                { "name": "WORKER_SANDBOX", "value": "process" },
+                { "name": "WORKER_COMMAND_POLICY", "value": "STRICT" },
+                { "name": "WORKER_BUILD_IMAGE_ENABLED", "value": "false" },
+                { "name": "WORKER_COMMAND_TIMEOUT_MS", "value": "900000" },
+                { "name": "WORKER_MAX_PIPELINE_DURATION_MS", "value": "1800000" },
+                { "name": "WORKER_RETRY_ENABLED", "value": "true" },
+                { "name": "WORKER_MAX_RETRIES", "value": "3" },
+                { "name": "WORKER_RETRY_DELAY_MS", "value": "30000" },
+                { "name": "CICD_JOBS_EXCHANGE", "value": "cicd.jobs.exchange" },
+                { "name": "CICD_RESULTS_EXCHANGE", "value": "cicd.results.exchange" },
+                { "name": "CICD_JOB_ROUTING_KEY", "value": "cicd.job.submitted" },
+                { "name": "CICD_DELAY_ROUTING_KEY", "value": "cicd.job.delay" },
+                { "name": "CICD_DEAD_ROUTING_KEY", "value": "cicd.job.dead" },
+                { "name": "CICD_RESULT_ROUTING_KEY", "value": "cicd.result" },
+                { "name": "CICD_JOB_QUEUE", "value": "cicd.jobs" },
+                { "name": "CICD_DELAY_QUEUE", "value": "cicd.jobs.delay" },
+                { "name": "CICD_DLQ", "value": "cicd.jobs.dlq" }
+              ],
+              "volumeMounts": [ { "volumeName": "worker-workspaces", "mountPath": "/data/workspaces" } ],
+              "probes": [
+                {
+                  "probeType": "Liveness",
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3,
+                  "httpGet": { "path": "/actuator/health", "port": 8080 }
+                }
+              ]
+            }
+          ],
+          "volumes": [
+            { "name": "worker-workspaces", "storageType": "AzureFile", "storageName": "worker-workspaces" }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-02-02-preview",
+      "name": "frontend",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": { "[parameters('appIdentityId')]": {} }
+      },
+      "dependsOn": [
+        "[variables('caeId')]",
+        "[resourceId('Microsoft.App/containerApps', 'backend')]"
+      ],
+      "properties": {
+        "managedEnvironmentId": "[variables('caeId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "registries": [
+            { "server": "[parameters('acrServer')]", "identity": "[parameters('appIdentityId')]" }
+          ],
+          "ingress": {
+            "external": true,
+            "targetPort": 80,
+            "transport": "http",
+            "allowInsecure": false
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "frontend",
+              "image": "[variables('frontendImage')]",
+              "resources": { "cpu": 0.5, "memory": "1Gi" },
+              "env": [
+                { "name": "BACKEND_INTERNAL_HOST", "value": "[variables('backendFqdn')]" }
+              ],
+              "probes": [
+                {
+                  "probeType": "Liveness",
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3,
+                  "httpGet": { "path": "/", "port": 80 }
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 2
+          }
+        }
+      }
+    }
+  ]
+}

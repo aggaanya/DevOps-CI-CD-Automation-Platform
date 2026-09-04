@@ -14,10 +14,14 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     private final WorkspaceConfig workspaceConfig;
+    private final WorkerResultProperties workerResultProperties;
     private final RabbitProperties rabbitProperties;
 
-    public RabbitMQConfig(WorkspaceConfig workspaceConfig, RabbitProperties rabbitProperties) {
+    public RabbitMQConfig(WorkspaceConfig workspaceConfig,
+                          WorkerResultProperties workerResultProperties,
+                          RabbitProperties rabbitProperties) {
         this.workspaceConfig = workspaceConfig;
+        this.workerResultProperties = workerResultProperties;
         this.rabbitProperties = rabbitProperties;
     }
 
@@ -56,6 +60,23 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(jobResultQueue)
                 .to(jobResultExchange)
                 .with(ExecutionConstants.JOB_RESULT_ROUTING_KEY);
+    }
+
+    @Bean
+    public DirectExchange workerResultExchange() {
+        return ExchangeBuilder.directExchange(workerResultProperties.getExchange()).durable(true).build();
+    }
+
+    @Bean
+    public Queue workerResultQueue() {
+        return QueueBuilder.durable(workerResultProperties.getQueue()).build();
+    }
+
+    @Bean
+    public Binding workerResultBinding(Queue workerResultQueue, DirectExchange workerResultExchange) {
+        return BindingBuilder.bind(workerResultQueue)
+                .to(workerResultExchange)
+                .with(workerResultProperties.getRoutingKey());
     }
 
     @Bean

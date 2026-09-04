@@ -228,6 +228,10 @@ services:
     networks:
       - cicd-local
 
+    environment:
+      # Injected into nginx.conf by envsubst at container start.
+      BACKEND_INTERNAL_HOST: ${BACKEND_INTERNAL_HOST:-backend:8081}
+
     depends_on:
       backend:
         condition: service_healthy
