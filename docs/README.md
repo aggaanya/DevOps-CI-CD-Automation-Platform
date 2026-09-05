@@ -56,6 +56,15 @@ template in `PROJECT_SPECIFICATION.md`:
 - `modules/` — one file per module when `backend/` and other components are
   implemented.
 
+### Reports
+
+| Phase | Topic | File |
+|---|---|---|
+| 5 | Containerization verification (pre-phase-6 audit) | `phase5-verification-report.md` |
+| 5 | Security gap matrix | `phase5-security-gap-matrix.md` |
+| 6 | Containerization | `phase6-containerization-report.md` |
+| 8 | Terraform IaC + GitHub Actions CI/CD | `phase8-terraform-and-cicd.md` |
+
 ## Conventions
 
 - Documentation is written in plain GitHub-flavored Markdown.

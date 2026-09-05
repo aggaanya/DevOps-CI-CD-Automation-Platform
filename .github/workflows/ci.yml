@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  java-tests:
+    name: Java tests (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dir: backend
+            artifact: control-plane
+          - dir: worker
+            artifact: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run Maven tests
+        working-directory: ${{ matrix.dir }}
+        run: mvn -B test
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Type-check + production build
+        working-directory: frontend
+        run: npm run build
+
+  terraform-validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.7"
+      - name: Format check
+        run: terraform fmt -check -recursive
+      - name: Init (no remote backend needed for validation)
+        run: terraform init -backend=false
+      - name: Validate
+        run: terraform validate
+
+  terraform-plan:
+    name: Terraform plan (PR)
+    runs-on: ubuntu-latest
+    # Only meaningful for PRs from this repository (fork PRs have no Azure OIDC
+    # access), and only once the OIDC secrets are configured.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      secrets.AZURE_CLIENT_ID != ''
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.7"
+      - name: Create Terraform state storage (idempotent)
+        run: |
+          rg="${{ vars.TF_STATE_RG || 'rg-tfstate-cicd' }}"
+          sa="${{ vars.TF_STATE_STORAGE || 'cicdtfstate' }}"
+          loc="${{ vars.TF_STATE_LOCATION || 'eastus' }}"
+          az group create --name "$rg" --location "$loc" --output none
+          az storage account create --name "$sa" --resource-group "$rg" \
+            --location "$loc" --sku Standard_LRS --min-tls-version TLS1_2 \
+            --allow-blob-public-access false --output none
+          az storage container create --account-name "$sa" --name tfstate \
+            --auth-mode login --output none
+      - name: Terraform plan
+        run: |
+          terraform init -backend-config=environments/dev/dev.tfbackend
+          terraform plan -out=.terraform/tfplan.pr -no-color \
+            -var image_tag="${{ github.sha }}"
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-plan-pr
+          path: infrastructure/terraform/.terraform/tfplan.pr
+          retention-days: 7

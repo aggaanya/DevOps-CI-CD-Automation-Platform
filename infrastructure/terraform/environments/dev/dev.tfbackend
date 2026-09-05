@@ -1,0 +1,16 @@
+# Remote state backend configuration for the dev environment.
+# Terraform reads this file via `-backend-config=environments/dev/dev.tfbackend`.
+#
+# The Resource Group / Storage Account / Container below are a small,
+# separately-managed runtime for the Terraform state itself (not created by
+# this configuration). Bootstrap them once with:
+#
+#   az group create   -n rg-tfstate-cicd -l <location>
+#   az storage account create -n <unique> -g rg-tfstate-cicd -l <location> --sku Standard_LRS
+#   az storage container create --account-name <unique> -n tfstate
+#
+# Values are names/keys only — never credentials.
+resource_group_name  = "rg-tfstate-cicd"
+storage_account_name = "cicdtfstate"
+container_name       = "tfstate"
+key                  = "dev.tfstate"

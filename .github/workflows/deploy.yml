@@ -1,0 +1,108 @@
+# Builds immutable images and deploys to Azure Container Apps on every push to
+# main. Uses OIDC (no client secrets), commit-SHA image tags (never "latest"),
+# and a single Terraform state (azurerm backend) per environment.
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_DIR: infrastructure/terraform
+  TFVARS: environments/dev/terraform.tfvars
+
+jobs:
+  deploy:
+    name: Terraform apply + image build/push
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    if: secrets.AZURE_CLIENT_ID != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.7"
+
+      - name: Create Terraform state storage (idempotent)
+        run: |
+          rg="${{ vars.TF_STATE_RG || 'rg-tfstate-cicd' }}"
+          sa="${{ vars.TF_STATE_STORAGE || 'cicdtfstate' }}"
+          loc="${{ vars.TF_STATE_LOCATION || 'eastus' }}"
+          az group create --name "$rg" --location "$loc" --output none
+          az storage account create --name "$sa" --resource-group "$rg" \
+            --location "$loc" --sku Standard_LRS --min-tls-version TLS1_2 \
+            --allow-blob-public-access false --output none
+          az storage container create --account-name "$sa" --name tfstate \
+            --auth-mode login --output none
+
+      # Phase 1: create all Azure infrastructure (RG, VNet, CAE, ACR,
+      # PostgreSQL, Key Vault, storage, identity). A placeholder image tag is
+      # used until the immutable images are pushed in phase 2.
+      - name: Terraform init
+        run: terraform init -backend-config=environments/dev/dev.tfbackend
+
+      - name: Terraform apply (infrastructure)
+        run: |
+          terraform apply -auto-approve -no-color \
+            -var-file="$TFVARS" -var image_tag="bootstrap"
+
+      - name: Capture ACR login server
+        id: acr
+        run: |
+          acr_full="$(terraform output -raw acr_login_server)"
+          registry="${acr_full%%.*}"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+          echo "acr_full=$acr_full" >> "$GITHUB_OUTPUT"
+
+      # Phase 2: build + push immutable images tagged with the commit SHA.
+      - name: Authenticate to ACR
+        run: az acr login --name "${{ steps.acr.outputs.registry }}"
+        working-directory: ${{ github.workspace }}
+
+      - name: Build + push backend image
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build -t "${{ steps.acr.outputs.acr_full }}/cicd-backend:${{ github.sha }}" -f backend/Dockerfile backend
+          docker push "${{ steps.acr.outputs.acr_full }}/cicd-backend:${{ github.sha }}"
+
+      - name: Build + push worker image
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build -t "${{ steps.acr.outputs.acr_full }}/cicd-worker:${{ github.sha }}" -f worker/Dockerfile worker
+          docker push "${{ steps.acr.outputs.acr_full }}/cicd-worker:${{ github.sha }}"
+
+      - name: Build + push frontend image
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build -t "${{ steps.acr.outputs.acr_full }}/cicd-frontend:${{ github.sha }}" -f frontend/Dockerfile frontend
+          docker push "${{ steps.acr.outputs.acr_full }}/cicd-frontend:${{ github.sha }}"
+
+      # Phase 3: roll the container apps onto the new immutable revision.
+      - name: Terraform apply (deploy images)
+        run: |
+          terraform apply -auto-approve -no-color \
+            -var-file="$TFVARS" -var image_tag="${{ github.sha }}"
+
+      - name: Summary
+        run: |
+          echo "Frontend: https://$(terraform output -raw frontend_fqdn)"
+          echo "Registry: $(terraform output -raw acr_login_server)"
+          echo "Image tag: ${{ github.sha }}"

@@ -6,17 +6,15 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.80"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   backend "azurerm" {
-    # Configure for your environment:
-    # resource_group_name  = "rg-cicd-terraform-state"
-    # storage_account_name = "stcicdterraformstate"
-    # container_name       = "tfstate"
-    # key                  = "dev.tfstate"
+    # Remote state storage is configured via -backend-config on init
+    # (see environments/dev/dev.tfbackend and docs/azure-terraform.md).
+    # For local-only validation use: terraform init -backend=false
   }
-}
-
-provider "azurerm" {
-  features {}
 }

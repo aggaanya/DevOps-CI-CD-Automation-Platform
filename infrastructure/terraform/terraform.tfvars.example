@@ -1,0 +1,20 @@
+# Example variable values. Copy to `terraform.tfvars` (gitignored) or pass via
+# CI/CD. Keep this file free of secrets — Key Vault secrets and backend state
+# are always resolved at runtime from Azure.
+
+environment = "dev"
+location    = "eastus"
+project     = "cicd-platform"
+
+# CI/CD injects the immutable commit SHA here. 'latest' exists only as a
+# fallback default and is never used for a real deployment.
+image_tag = "abcdef0123456789"
+
+postgres_user     = "cicd"
+postgres_database = "cicd"
+
+tags = {
+  project    = "cicd-platform"
+  managed-by = "terraform"
+  owner      = "cicd-platform"
+}
