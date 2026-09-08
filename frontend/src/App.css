@@ -522,6 +522,19 @@ td strong { color: #304056; font-weight: 600; }
 
 .project-selector label.project-pick { min-width: 230px; }
 
+.project-selector .project-list {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.project-selector .project-empty {
+  font-size: 12px;
+  color: #738095;
+  padding: 8px 2px;
+}
+
 .project-selector input,
 .project-selector select {
   height: 34px;
@@ -622,6 +635,17 @@ td strong { color: #304056; font-weight: 600; }
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.auth-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-gate .loading {
+  margin: 0;
+}
 
 .clickable-row { cursor: pointer; }
 .clickable-row:hover { background: #f7fafc; }

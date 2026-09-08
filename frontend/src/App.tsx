@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import type { User } from 'oidc-client-ts'
+import { api } from './api'
+import { useAuth } from './AuthContext'
 
 type Project = { id: string; name: string; slug: string; description?: string; status: string }
 type Repo = { id: string; projectId: string; provider: string; repositoryUrl: string; repositoryName: string; defaultBranch: string; status: string }
@@ -20,12 +23,6 @@ const pageTitles: Record<string, string> = {
   repositories: 'Repositories', artifacts: 'Artifacts', infrastructure: 'Infrastructure', settings: 'Settings',
 }
 
-const api = async <T,>(url: string, options?: RequestInit): Promise<T> => {
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options })
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.message ?? `Request failed (${res.status})`)
-  return res.json() as Promise<T>
-}
-
 const statusClass = (status = '') => /success|complete|passed/i.test(status) ? 'success' : /fail|cancel|error/i.test(status) ? 'failed' : 'running'
 const toneFor = (value = '') => /up/i.test(value) ? 'success' : /down|degraded/i.test(value) ? 'failed' : 'running'
 const isDone = (status = '') => /success|fail|complete|cancel|error/i.test(status)
@@ -38,7 +35,54 @@ const relativeTime = (date?: string) => {
 }
 const pipelineNameOf = (pipelines: Pipeline[], pipelineId: string) => pipelines.find(p => p.id === pipelineId)?.name ?? 'Pipeline'
 
+type IdClaims = {
+  name?: string
+  given_name?: string
+  family_name?: string
+  preferred_username?: string
+  email?: string
+  realm_access?: { roles?: string[] }
+}
+
+const claimsOf = (user: User | null): IdClaims => (user?.profile ?? {}) as IdClaims
+
+const decodeJwtPayload = (token: string): Record<string, unknown> => {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return {}
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+    return JSON.parse(atob(padded)) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+const realmRolesOf = (user: User | null): string[] => {
+  const profileRoles = claimsOf(user).realm_access?.roles
+  if (profileRoles?.length) return profileRoles
+  if (user?.access_token) {
+    const realmAccess = decodeJwtPayload(user.access_token).realm_access as { roles?: string[] } | undefined
+    if (Array.isArray(realmAccess?.roles)) return realmAccess.roles
+  }
+  return []
+}
+
+const displayName = (user: User | null) => {
+  const profile = claimsOf(user)
+  if (profile.name) return profile.name
+  const full = [profile.given_name, profile.family_name].filter(Boolean).join(' ')
+  return full.trim() || profile.preferred_username || profile.email || 'User'
+}
+
+const primaryRole = (user: User | null) => {
+  const roles = realmRolesOf(user)
+  const known = ['ADMIN', 'DEVELOPER', 'VIEWER'] as const
+  return known.find(role => roles.includes(role)) ?? (roles[0] ?? 'User')
+}
+
 function App() {
+  const { user, signOut } = useAuth()
   const initialProject = new URLSearchParams(location.search).get('projectId') ?? ''
   const [route, setRoute] = useState(location.hash || '#/')
   const [projectId, setProjectId] = useState(initialProject)
@@ -55,7 +99,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
-  const [modal, setModal] = useState<'pipeline' | 'run' | 'repo' | 'org' | null>(null)
+  const [modal, setModal] = useState<'pipeline' | 'run' | 'repo' | 'org' | 'project' | null>(null)
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
@@ -135,6 +179,26 @@ function App() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to create organization') }
   }
 
+  const createProject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    try {
+      const project = await api<Project>('/api/v1/projects', {
+        method: 'POST',
+        body: JSON.stringify({
+          organizationId: orgId,
+          name: data.get('name'),
+          slug: data.get('slug'),
+          description: data.get('description') || '',
+        }),
+      })
+      setModal(null); setNotice(`Project ${project.name} created.`)
+      const list = await api<Project[]>(`/api/v1/projects?organizationId=${encodeURIComponent(orgId)}`)
+      setProjects(list)
+      selectProject(project.id)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to create project') }
+  }
+
   const createPipeline = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
@@ -212,9 +276,9 @@ function App() {
           </div>
           <div className="topbar-right">
             <div className="profile">
-              <button className="icon-button" aria-label="Notifications">♧</button>
-              <span className="avatar">A</span>
-              <div><strong>Aanya Aggarwal</strong><small>Admin</small></div>
+              <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={() => void signOut()}>⏻</button>
+              <span className="avatar">{(user?.profile.preferred_username ?? 'U').slice(0, 1).toUpperCase()}</span>
+              <div><strong>{displayName(user)}</strong><small>{primaryRole(user)}</small></div>
               <span className="chevron">⌄</span>
             </div>
           </div>
@@ -224,7 +288,8 @@ function App() {
           <ProjectSelector
             projectId={projectId} input={projectInput} setInput={setProjectInput}
             orgs={orgs} orgId={orgId} projects={projects}
-            onSubmit={submitProjectId} onLoadProjects={loadProjects} onSelect={selectProject} onAddOrg={() => setModal('org')}
+            onSubmit={submitProjectId} onLoadProjects={loadProjects} onSelect={selectProject}
+            onAddOrg={() => setModal('org')} onNewProject={() => setModal('project')}
           />
           {notice && <div className="notice">{notice}<button onClick={() => setNotice('')}>×</button></div>}
           {error && <div className="inline-error">{error}<button onClick={() => { setError(''); void loadProject() }}>Retry</button></div>}
@@ -234,7 +299,7 @@ function App() {
       </main>
 
       {modal && (
-        <Modal title={modal === 'pipeline' ? 'New Pipeline' : modal === 'repo' ? 'Connect Repository' : modal === 'org' ? 'New Organization' : 'Trigger Run'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'pipeline' ? 'New Pipeline' : modal === 'repo' ? 'Connect Repository' : modal === 'org' ? 'New Organization' : modal === 'project' ? 'New Project' : 'Trigger Run'} onClose={() => setModal(null)}>
           {modal === 'pipeline' ? (
             <form className="modal-form-grid" onSubmit={createPipeline}>
               <Field name="name" label="Pipeline name" required />
@@ -265,6 +330,19 @@ function App() {
                 <Submit label="Create Organization" />
               </div>
             </form>
+          ) : modal === 'project' ? (
+            <form className="modal-form-grid" onSubmit={createProject}>
+              <Field name="name" label="Project name" required />
+              <Field name="slug" label="Slug" required />
+              <Field name="description" label="Description" className="field-full" />
+              <div className="form-context">
+                <span>Organization: {orgId || 'not selected'}</span>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancel</button>
+                <Submit disabled={!orgId} label="Create Project" />
+              </div>
+            </form>
           ) : (
             <form className="modal-form-grid" onSubmit={triggerRun}>
               <label className="field-full">Repository
@@ -292,11 +370,11 @@ function App() {
   )
 }
 
-function ProjectSelector({ projectId, input, setInput, orgs, orgId, projects, onSubmit, onLoadProjects, onSelect, onAddOrg }: {
+function ProjectSelector({ projectId, input, setInput, orgs, orgId, projects, onSubmit, onLoadProjects, onSelect, onAddOrg, onNewProject }: {
   projectId: string; input: string; setInput: (v: string) => void
   orgs: Org[]; orgId: string; projects: Project[]
   onSubmit: (e: FormEvent) => void; onLoadProjects: (org: string) => void
-  onSelect: (id: string) => void; onAddOrg: () => void
+  onSelect: (id: string) => void; onAddOrg: () => void; onNewProject: () => void
 }) {
   return (
     <section className="project-selector">
@@ -314,13 +392,25 @@ function ProjectSelector({ projectId, input, setInput, orgs, orgId, projects, on
         <button className="text-button" type="submit">Browse projects</button>
         <button className="text-button" type="button" onClick={onAddOrg}>+ New org</button>
       </form>
-      {projects.length > 0 && (
-        <label className="project-pick">Project
-          <select aria-label="Select project" value={projectId} onChange={e => onSelect(e.target.value)}>
-            <option value="">Select a project</option>
-            {projects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}
-          </select>
-        </label>
+      {orgId && (
+        <div className="project-list">
+          {projects.length > 0 ? (
+            <>
+              <label className="project-pick">Project
+                <select aria-label="Select project" value={projectId} onChange={e => onSelect(e.target.value)}>
+                  <option value="">Select a project…</option>
+                  {projects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}
+                </select>
+              </label>
+              <button className="text-button" type="button" onClick={onNewProject}>+ New Project</button>
+            </>
+          ) : (
+            <>
+              <span className="project-empty">No projects in this organization yet.</span>
+              <button className="text-button" type="button" onClick={onNewProject}>+ New Project</button>
+            </>
+          )}
+        </div>
       )}
     </section>
   )
