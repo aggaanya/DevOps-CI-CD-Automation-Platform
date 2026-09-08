@@ -15,6 +15,10 @@ type Org = { id: string; name: string; slug: string; description?: string; statu
 const navItems = ['Overview', 'Pipelines', 'Runs', 'Workers', 'Repositories', 'Artifacts', 'Infrastructure', 'Settings']
 const iconFor = (item: string) => ({ Overview: '▦', Pipelines: '⌘', Runs: '▷', Workers: '♙', Repositories: '▱', Artifacts: '◇', Infrastructure: '☁', Settings: '⚙' }[item] ?? '▦')
 const routeFor = (name: string) => name === 'Overview' ? '#/' : `#/${name.toLowerCase()}`
+const pageTitles: Record<string, string> = {
+  overview: 'Overview', pipelines: 'Pipelines', runs: 'Runs', workers: 'Workers',
+  repositories: 'Repositories', artifacts: 'Artifacts', infrastructure: 'Infrastructure', settings: 'Settings',
+}
 
 const api = async <T,>(url: string, options?: RequestInit): Promise<T> => {
   const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options })
@@ -202,12 +206,17 @@ function App() {
 
       <main className="content">
         <header className="topbar">
-          <label className="search"><b>⌕</b><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search pipelines, runs, repositories..." /></label>
-          <div className="profile">
-            <button className="icon-button" aria-label="Notifications">♧</button>
-            <span className="avatar">A</span>
-            <div><strong>Aanya Aggarwal</strong><small>Admin</small></div>
-            <span className="chevron">⌄</span>
+          <div className="topbar-left">
+            <h1 className="topbar-title">{pageTitles[activePage] ?? 'Overview'}</h1>
+            <label className="search"><b>⌕</b><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search pipelines, runs, repositories..." /></label>
+          </div>
+          <div className="topbar-right">
+            <div className="profile">
+              <button className="icon-button" aria-label="Notifications">♧</button>
+              <span className="avatar">A</span>
+              <div><strong>Aanya Aggarwal</strong><small>Admin</small></div>
+              <span className="chevron">⌄</span>
+            </div>
           </div>
         </header>
 
@@ -227,29 +236,38 @@ function App() {
       {modal && (
         <Modal title={modal === 'pipeline' ? 'New Pipeline' : modal === 'repo' ? 'Connect Repository' : modal === 'org' ? 'New Organization' : 'Trigger Run'} onClose={() => setModal(null)}>
           {modal === 'pipeline' ? (
-            <form onSubmit={createPipeline}>
+            <form className="modal-form-grid" onSubmit={createPipeline}>
               <Field name="name" label="Pipeline name" required />
-              <Field name="description" label="Description" />
-              <Submit disabled={!projectId} label="Create Pipeline" />
+              <Field name="description" label="Description" className="field-full" />
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancel</button>
+                <Submit disabled={!projectId} label="Create Pipeline" />
+              </div>
             </form>
           ) : modal === 'repo' ? (
-            <form onSubmit={createRepo}>
+            <form className="modal-form-grid" onSubmit={createRepo}>
               <Field name="repositoryName" label="Repository name" required />
               <Field name="repositoryUrl" label="Repository URL" type="url" required />
               <label>Provider<select name="provider" defaultValue="GITHUB"><option>GITHUB</option><option>GITLAB</option><option>BITBUCKET</option></select></label>
               <Field name="defaultBranch" label="Default branch" defaultValue="main" required />
-              <Submit disabled={!projectId} label="Connect Repository" />
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancel</button>
+                <Submit disabled={!projectId} label="Connect Repository" />
+              </div>
             </form>
           ) : modal === 'org' ? (
-            <form onSubmit={createOrg}>
+            <form className="modal-form-grid" onSubmit={createOrg}>
               <Field name="name" label="Organization name" required />
               <Field name="slug" label="Slug" required />
-              <Field name="description" label="Description" />
-              <Submit label="Create Organization" />
+              <Field name="description" label="Description" className="field-full" />
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancel</button>
+                <Submit label="Create Organization" />
+              </div>
             </form>
           ) : (
-            <form onSubmit={triggerRun}>
-              <label>Repository
+            <form className="modal-form-grid" onSubmit={triggerRun}>
+              <label className="field-full">Repository
                 <select name="repositoryUrl" required defaultValue="">
                   <option value="" disabled>Select a repository</option>
                   {repos.map(repo => <option value={repo.repositoryUrl} key={repo.id}>{repo.repositoryName}</option>)}
@@ -257,8 +275,15 @@ function App() {
               </label>
               <Field name="commitSha" label="Commit SHA" required />
               <Field name="branch" label="Branch" defaultValue="main" required />
-              <Field name="pipelineFile" label="Pipeline file" defaultValue="pipeline.yml" required />
-              <Submit disabled={!repos.length} label="Trigger Run" />
+              <Field name="pipelineFile" label="Pipeline file" defaultValue="pipeline.yml" className="field-full" required />
+              <div className="form-context">
+                <span>Project: {projectId || 'not selected'}</span>
+                <span>Organization: {orgId || 'not selected'}</span>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setModal(null)}>Cancel</button>
+                <Submit disabled={!repos.length} label="Trigger Run" />
+              </div>
             </form>
           )}
         </Modal>
@@ -689,10 +714,10 @@ function Empty({ text }: { text: string }) {
   )
 }
 
-function Field({ name, label, type = 'text', defaultValue, required }: {
-  name: string; label: string; type?: string; defaultValue?: string; required?: boolean
+function Field({ name, label, type = 'text', defaultValue, required, className }: {
+  name: string; label: string; type?: string; defaultValue?: string; required?: boolean; className?: string
 }) {
-  return <label>{label}<input name={name} type={type} defaultValue={defaultValue} required={required} /></label>
+  return <label className={className}>{label}<input name={name} type={type} defaultValue={defaultValue} required={required} /></label>
 }
 
 function Submit({ label, disabled }: { label: string; disabled?: boolean }) {
