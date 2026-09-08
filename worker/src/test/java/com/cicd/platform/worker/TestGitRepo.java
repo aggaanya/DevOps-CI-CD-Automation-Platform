@@ -71,6 +71,39 @@ public final class TestGitRepo {
         }
     }
 
+    /**
+     * Creates a repo with two commits: the first is a minimal Maven project, the
+     * second modifies {@code pipeline.yml}. Returns both full SHAs (first commit,
+     * second/tip commit) so a test can exercise checkout of a non-tip SHA.
+     */
+    public static String[] createMavenRepoWithHistory(Path repoDir) throws Exception {
+        createMavenRepo(repoDir, true);
+
+        String firstSha;
+        try (Git git = Git.init().setDirectory(repoDir.toFile()).call()) {
+            firstSha = git.getRepository().resolve("HEAD").name();
+        }
+
+        Files.writeString(repoDir.resolve("pipeline.yml"),
+                "pipeline:\n"
+                        + "  name: fixture-app-v2\n"
+                        + "  stages:\n"
+                        + "    - name: build-test\n"
+                        + "      jobs:\n"
+                        + "        - name: maven-build\n"
+                        + "          steps:\n"
+                        + "            - run: mvn -B clean package\n",
+                StandardCharsets.UTF_8);
+
+        try (Git git = Git.init().setDirectory(repoDir.toFile()).call()) {
+            git.add().addFilepattern("pipeline.yml").call();
+            git.commit().setAuthor(AUTHOR).setCommitter(AUTHOR)
+                    .setMessage("fixture commit: second version")
+                    .setAll(true).call();
+            return new String[]{firstSha, git.getRepository().resolve("HEAD").name()};
+        }
+    }
+
     public static String mavenPipeline() {
         return """
                 pipeline:

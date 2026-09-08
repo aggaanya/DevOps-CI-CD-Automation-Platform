@@ -19,8 +19,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,9 +35,34 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/**
+ * In-process dispatch -> consume flow against an isolated RabbitMQ broker.
+ *
+ * <p>Broker isolation is deliberate: this test must never touch the shared
+ * production broker where the running backend is a live competing consumer on
+ * {@code pipeline-jobs} (which would steal the dispatched message and nack it,
+ * leaving this test's mock {@link WorkerExecutor} uninvoked). Testcontainers
+ * gives a deterministic broker per suite run and is Docker-only, so the test
+ * works identically on CI (ubuntu runners ship Docker) and locally.</p>
+ */
 @SpringBootTest
 @ActiveProfiles("test")
+@Testcontainers(disabledWithoutDocker = true)
 class RabbitMQIntegrationTest {
+
+    @Container
+    static final GenericContainer<?> RABBIT = new GenericContainer<>("rabbitmq:3.13-management-alpine")
+            .withExposedPorts(5672)
+            .waitingFor(Wait.forLogMessage("(?s).*Server startup complete.*", 1)
+                    .withStartupTimeout(Duration.ofMinutes(2)));
+
+    @DynamicPropertySource
+    static void rabbitProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.rabbitmq.host", RABBIT::getHost);
+        registry.add("spring.rabbitmq.port", () -> RABBIT.getMappedPort(5672));
+        registry.add("spring.rabbitmq.username", () -> "guest");
+        registry.add("spring.rabbitmq.password", () -> "guest");
+    }
 
     @Autowired
     private RabbitTemplate rabbitTemplate;

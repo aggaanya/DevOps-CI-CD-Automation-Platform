@@ -34,3 +34,7 @@ Thumbs.db
 
 # Local deploy state (suffix, FQDNs — never commit)
 .state/
+
+# Stray recursive path artifact on Windows (Git resolves it to repo root;
+# prevents `git add -A` from staging a phantom nested copy)
+.../

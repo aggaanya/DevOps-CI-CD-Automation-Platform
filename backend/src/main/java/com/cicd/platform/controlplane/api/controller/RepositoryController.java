@@ -7,6 +7,8 @@ import com.cicd.platform.controlplane.api.dto.UpdateRepositoryRequest;
 import com.cicd.platform.controlplane.domain.entity.Repository;
 import com.cicd.platform.controlplane.domain.service.RepositoryService;
 import com.cicd.platform.controlplane.execution.RunService;
+import com.cicd.platform.controlplane.security.ProjectAccessService;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,19 +19,25 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/repositories")
+@Schema(description = "Repositories; scoped to the caller's project membership")
 public class RepositoryController {
 
     private final RepositoryService repositoryService;
     private final RunService runService;
+    private final ProjectAccessService projectAccessService;
 
-    public RepositoryController(RepositoryService repositoryService, RunService runService) {
+    public RepositoryController(RepositoryService repositoryService, RunService runService,
+                                ProjectAccessService projectAccessService) {
         this.repositoryService = repositoryService;
         this.runService = runService;
+        this.projectAccessService = projectAccessService;
     }
 
     @PostMapping
+    @Schema(description = "Requires DEVELOPER or ADMIN access on the target project")
     public ResponseEntity<RepositoryResponse> create(@Valid @RequestBody CreateRepositoryRequest request) {
-        var repo = repositoryService.create(
+        projectAccessService.assertProjectWrite(request.projectId());
+        Repository repo = repositoryService.create(
                 request.projectId(), request.provider(), request.repositoryUrl(),
                 request.repositoryName(), request.defaultBranch());
         return ResponseEntity.status(HttpStatus.CREATED).body(RepositoryResponse.from(repo));
@@ -37,12 +45,14 @@ public class RepositoryController {
 
     @GetMapping("/{id}")
     public ResponseEntity<RepositoryResponse> getById(@PathVariable UUID id) {
-        var repo = repositoryService.findById(id);
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForRepository(id));
+        Repository repo = repositoryService.findById(id);
         return ResponseEntity.ok(RepositoryResponse.from(repo));
     }
 
     @GetMapping
     public ResponseEntity<List<RepositoryResponse>> list(@RequestParam UUID projectId) {
+        projectAccessService.assertProjectRead(projectId);
         var repos = repositoryService.findByProjectId(projectId);
         return ResponseEntity.ok(repos.stream().map(RepositoryResponse::from).toList());
     }
@@ -50,23 +60,26 @@ public class RepositoryController {
     @PutMapping("/{id}")
     public ResponseEntity<RepositoryResponse> update(@PathVariable UUID id,
                                                      @Valid @RequestBody UpdateRepositoryRequest request) {
+        projectAccessService.assertProjectWrite(projectAccessService.resolveProjectForRepository(id));
         Repository.RepositoryStatus status = null;
         if (request.status() != null) {
             status = Repository.RepositoryStatus.valueOf(request.status());
         }
-        var repo = repositoryService.update(id, request.repositoryUrl(), request.repositoryName(),
+        Repository repo = repositoryService.update(id, request.repositoryUrl(), request.repositoryName(),
                 request.defaultBranch(), status);
         return ResponseEntity.ok(RepositoryResponse.from(repo));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        projectAccessService.assertProjectAdmin(projectAccessService.resolveProjectForRepository(id));
         repositoryService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/runs")
     public ResponseEntity<List<RunResponse>> getRuns(@PathVariable UUID id) {
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForRepository(id));
         repositoryService.findById(id);
         var runs = runService.getRunsByRepositoryId(id);
         return ResponseEntity.ok(runs.stream().map(RunResponse::from).toList());

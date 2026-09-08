@@ -39,6 +39,29 @@ class JGitGitServiceTest {
     }
 
     @Test
+    void checksOutHistoricalNonTipCommit() throws Exception {
+        Path repoDir = tempDir.resolve("repo-src");
+        String[] shas = TestGitRepo.createMavenRepoWithHistory(repoDir);
+        String firstSha = shas[0];
+        String tipSha = shas[1];
+
+        JGitGitService gitService = new JGitGitService(new WorkerProperties());
+        Path checkout = Files.createTempDirectory(tempDir, "checkout");
+
+        PipelineJob job = new PipelineJob("job-1", "pipeline-1",
+                repoDir.toUri().toString(), firstSha, "main", "pipeline.yml", null, null, null);
+
+        CommitInfo info = gitService.checkoutCommit(job, checkout);
+
+        assertEquals(firstSha, info.commitSha());
+        assertTrue(Files.exists(checkout.resolve("pom.xml")));
+        assertTrue(Files.exists(checkout.resolve("pipeline.yml")));
+        String content = Files.readString(checkout.resolve("pipeline.yml"));
+        assertTrue(content.contains("fixture-app"), "pipeline content should be from first commit");
+        assertTrue(!content.contains("fixture-app-v2"), "must not check out tip commit");
+    }
+
+    @Test
     void rejectsNonExistentCommit() throws Exception {
         Path repoDir = tempDir.resolve("repo-src");
         TestGitRepo.createMavenRepo(repoDir, true);

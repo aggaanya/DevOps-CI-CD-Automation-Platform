@@ -1,0 +1,10 @@
+# Gitleaks configuration: extends the default rule set with an allowlist for
+# test fixtures that intentionally embed fake secret values to prove that
+# secret redaction and blocking of secret-named env vars actually work.
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''worker/src/test/java/com/cicd/platform/worker/security/CommandSecurityPolicyTest.java''',
+]

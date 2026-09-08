@@ -26,11 +26,10 @@ import java.nio.charset.StandardCharsets;
  * results for the same {@code jobId} are acknowledged and ignored (the worker
  * exchange is at-least-once).
  *
- * <p>The listener receives the raw {@link Message}: the worker serializes with
- * a {@code Jackson2JsonMessageConverter} (which stamps a {@code __TypeId__}
- * header referencing worker-internal classes that are not on this classpath),
- * so parsing is done here with the plain JSON body into
- * {@link WorkerResultMessage}.
+ * <p>The listener receives the raw {@link Message}: the worker publishes the
+ * result as plain JSON (no {@code __TypeId__} or other Java class-name
+ * headers), and parsing is done here with the plain JSON body into the
+ * control plane's own immutable {@link WorkerResultMessage}.
  */
 @Component
 public class WorkerResultConsumer {

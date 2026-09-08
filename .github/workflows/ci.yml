@@ -52,6 +52,32 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  security-scan:
+    name: Security scan (secrets + dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          tar -xzf <(curl -sL \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz) \
+            -C /usr/local/bin gitleaks
+      - name: Run gitleaks
+        run: gitleaks detect --config .gitleaks.toml --source . --no-banner
+      - name: Install osv-scanner
+        run: |
+          curl -sLo /usr/local/bin/osv-scanner \
+            https://github.com/google/osv-scanner/releases/download/v2.5.1/osv-scanner_linux_amd64
+          chmod +x /usr/local/bin/osv-scanner
+      - name: Scan dependency manifests
+        run: |
+          osv-scanner scan \
+            backend/pom.xml \
+            worker/pom.xml \
+            frontend/package-lock.json
+
   terraform-validate:
     name: Terraform validate
     runs-on: ubuntu-latest

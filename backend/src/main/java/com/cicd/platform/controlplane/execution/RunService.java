@@ -96,23 +96,49 @@ public class RunService {
 
     @Transactional(readOnly = true)
     public PipelineRun getRun(UUID runId) {
-        return pipelineRunRepository.findById(runId)
+        PipelineRun run = pipelineRunRepository.findById(runId)
                 .orElseThrow(() -> new ResourceNotFoundException("PipelineRun not found with id: " + runId));
+        initializeRunAssociations(run);
+        return run;
     }
 
     @Transactional(readOnly = true)
     public List<PipelineRun> getRunsByVersion(UUID versionId) {
-        return pipelineRunRepository.findByPipelineVersionIdOrderByCreatedAtDesc(versionId);
+        return pipelineRunRepository.findByPipelineVersionIdOrderByCreatedAtDesc(versionId).stream()
+                .map(run -> {
+                    initializeRunAssociations(run);
+                    return run;
+                }).toList();
     }
 
     @Transactional(readOnly = true)
     public List<PipelineRun> getRunsByPipelineId(UUID pipelineId) {
-        return pipelineRunRepository.findByPipelineIdOrderByCreatedAtDesc(pipelineId);
+        return pipelineRunRepository.findByPipelineIdOrderByCreatedAtDesc(pipelineId).stream()
+                .map(run -> {
+                    initializeRunAssociations(run);
+                    return run;
+                }).toList();
     }
 
     @Transactional(readOnly = true)
     public List<PipelineRun> getRunsByRepositoryId(UUID repositoryId) {
-        return pipelineRunRepository.findByRepositoryIdOrderByCreatedAtDesc(repositoryId);
+        return pipelineRunRepository.findByRepositoryIdOrderByCreatedAtDesc(repositoryId).stream()
+                .map(run -> {
+                    initializeRunAssociations(run);
+                    return run;
+                }).toList();
+    }
+
+    /**
+     * Materializes the lazy {@code pipelineVersion.pipeline} references while the
+     * persistence context is still open so callers can safely map the detached
+     * entity in the web layer (open-in-view is disabled).
+     */
+    private static void initializeRunAssociations(PipelineRun run) {
+        PipelineVersion version = run.getPipelineVersion();
+        if (version != null) {
+            version.getPipeline().getId();
+        }
     }
 
     public PipelineRun cancelRun(UUID runId) {
@@ -129,7 +155,9 @@ public class RunService {
 
         auditService.record(run.getTriggeredBy(), "CANCEL_RUN", "PipelineRun", runId, null, null);
 
-        return pipelineRunRepository.findById(runId).orElse(run);
+        PipelineRun refreshed = pipelineRunRepository.findById(runId).orElse(run);
+        initializeRunAssociations(refreshed);
+        return refreshed;
     }
 
     @Transactional(readOnly = true)

@@ -1,11 +1,10 @@
 package com.cicd.platform.controlplane.api.controller;
 
 import com.cicd.platform.controlplane.api.dto.*;
-import com.cicd.platform.controlplane.domain.entity.PipelineJob;
 import com.cicd.platform.controlplane.domain.entity.PipelineRun;
-import com.cicd.platform.controlplane.domain.entity.PipelineStage;
-import com.cicd.platform.controlplane.domain.entity.JobAttempt;
 import com.cicd.platform.controlplane.execution.RunService;
+import com.cicd.platform.controlplane.security.ProjectAccessService;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,16 +15,20 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/runs")
+@Schema(description = "Pipeline runs; scoped to the caller's project membership")
 public class RunController {
 
     private final RunService runService;
+    private final ProjectAccessService projectAccessService;
 
-    public RunController(RunService runService) {
+    public RunController(RunService runService, ProjectAccessService projectAccessService) {
         this.runService = runService;
+        this.projectAccessService = projectAccessService;
     }
 
     @PostMapping
     public ResponseEntity<RunResponse> triggerRun(@Valid @RequestBody TriggerPipelineRunRequest request) {
+        projectAccessService.assertProjectWrite(projectAccessService.resolveProjectForVersion(request.pipelineVersionId()));
         PipelineRun run = runService.triggerRun(
                 request.pipelineVersionId(),
                 request.commitSha(),
@@ -37,12 +40,14 @@ public class RunController {
 
     @GetMapping("/{id}")
     public ResponseEntity<RunResponse> getRun(@PathVariable UUID id) {
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForRun(id));
         PipelineRun run = runService.getRun(id);
         return ResponseEntity.ok(RunResponse.from(run));
     }
 
     @GetMapping
     public ResponseEntity<List<RunResponse>> listRuns(@RequestParam UUID versionId) {
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForVersion(versionId));
         List<RunResponse> runs = runService.getRunsByVersion(versionId).stream()
                 .map(RunResponse::from)
                 .toList();
@@ -51,12 +56,14 @@ public class RunController {
 
     @PostMapping("/{id}/cancel")
     public ResponseEntity<RunResponse> cancelRun(@PathVariable UUID id) {
+        projectAccessService.assertProjectWrite(projectAccessService.resolveProjectForRun(id));
         PipelineRun run = runService.cancelRun(id);
         return ResponseEntity.ok(RunResponse.from(run));
     }
 
     @GetMapping("/{id}/stages")
     public ResponseEntity<List<StageResponse>> getStages(@PathVariable UUID id) {
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForRun(id));
         List<StageResponse> stages = runService.getStages(id).stream()
                 .map(StageResponse::from)
                 .toList();
@@ -66,6 +73,7 @@ public class RunController {
     @GetMapping("/{runId}/stages/{stageId}/jobs")
     public ResponseEntity<List<JobResponse>> getJobs(
             @PathVariable UUID runId, @PathVariable UUID stageId) {
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForRun(runId));
         runService.getRun(runId);
         List<JobResponse> jobs = runService.getJobs(stageId).stream()
                 .map(JobResponse::from)
@@ -77,6 +85,7 @@ public class RunController {
     public ResponseEntity<List<AttemptResponse>> getAttempts(
             @PathVariable UUID runId, @PathVariable UUID stageId,
             @PathVariable UUID jobId) {
+        projectAccessService.assertProjectRead(projectAccessService.resolveProjectForRun(runId));
         runService.getRun(runId);
         List<AttemptResponse> attempts = runService.getAttempts(jobId).stream()
                 .map(AttemptResponse::from)

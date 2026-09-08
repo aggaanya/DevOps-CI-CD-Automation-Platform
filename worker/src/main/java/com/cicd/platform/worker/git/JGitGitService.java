@@ -65,10 +65,9 @@ public class JGitGitService implements GitService {
                         "Commit " + requestedSha + " does not exist in repository " + sanitizedUrl(url));
             }
 
-            git.checkout()
-                    .setName(commitId.name())
-                    .setForce(true)
-                    .setCreateBranch(false)
+            git.reset()
+                    .setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
+                    .setRef(commitId.name())
                     .call();
 
             ObjectId head = repository.resolve("HEAD^{commit}");
