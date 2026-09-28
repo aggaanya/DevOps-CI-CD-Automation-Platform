@@ -14,27 +14,38 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
+  const [authError, setAuthError] = useState('')
 
   useEffect(() => {
     let cancelled = false
-    restoreSession().then((u) => {
+    restoreSession().then((result) => {
       if (cancelled) return
-      setUser(u)
+      if (result.status === 'authenticated') setUser(result.user)
+      else if (result.status === 'error') setAuthError(result.message)
       setIsReady(true)
     })
     return () => { cancelled = true }
   }, [])
 
   const signOut = useCallback(async () => {
-    await userManager.signoutRedirect({ post_logout_redirect_uri: window.location.origin })
+    await userManager.signoutRedirect({ post_logout_redirect_uri: `${window.location.origin}/` })
   }, [])
 
   const value = useMemo(() => ({ user, isReady, signOut }), [user, isReady, signOut])
 
-  if (!isReady) {
+  if (!isReady || !user) {
     return (
       <div className="auth-gate">
-        <div className="loading">Starting secure session…</div>
+        <div className="loading">
+          {authError ? (
+            <>
+              <span>{authError}</span>
+              <button onClick={() => window.location.reload()}>Try again</button>
+            </>
+          ) : (
+            'Starting secure session…'
+          )}
+        </div>
       </div>
     )
   }

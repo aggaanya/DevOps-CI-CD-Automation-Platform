@@ -14,7 +14,7 @@ public class WorkspaceConfig {
     private String workerId = ExecutionConstants.DEFAULT_WORKER_ID;
     private String artifactDir = ExecutionConstants.WORKSPACE_ARTIFACTS_DIR;
     private int concurrency = ExecutionConstants.DEFAULT_CONCURRENCY;
-    private int prefetch = ExecutionConstants.DEFAULT_PREFETCH;
+    private Integer prefetch;
 
     public String getBasePath() { return basePath; }
     public void setBasePath(String basePath) { this.basePath = basePath; }
@@ -34,9 +34,24 @@ public class WorkspaceConfig {
     public String getArtifactDir() { return artifactDir; }
     public void setArtifactDir(String artifactDir) { this.artifactDir = artifactDir; }
 
+    /**
+     * Number of job consumer threads; the hard upper bound on how many jobs of one
+     * run can execute at the same time.
+     */
     public int getConcurrency() { return concurrency; }
-    public void setConcurrency(int concurrency) { this.concurrency = concurrency; }
+    public void setConcurrency(int concurrency) { this.concurrency = Math.max(1, concurrency); }
 
-    public int getPrefetch() { return prefetch; }
-    public void setPrefetch(int prefetch) { this.prefetch = prefetch; }
+    /**
+     * Explicit prefetch. When unset it defaults to the consumer count so that a
+     * multi-consumer pool is actually fed more than one unacked message.
+     */
+    public Integer getPrefetch() { return prefetch; }
+    public void setPrefetch(Integer prefetch) { this.prefetch = prefetch; }
+
+    public int resolvePrefetch(int consumers) {
+        if (prefetch != null && prefetch > 0) {
+            return prefetch;
+        }
+        return Math.max(1, consumers);
+    }
 }

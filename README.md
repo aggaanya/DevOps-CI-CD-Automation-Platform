@@ -37,11 +37,12 @@ system.
 17. [Observability](#17-observability)
 18. [Security](#18-security)
 19. [Current Project Status](#19-current-project-status)
-20. [Known Limitations](#20-known-limitations)
-21. [Future Enhancements](#21-future-enhancements)
-22. [Interview Explanation](#22-interview-explanation)
-23. [Architecture Diagram](#23-architecture-diagram)
-24. [Final Repository Structure](#24-final-repository-structure)
+20. [Validated Metrics](#20-validated-metrics)
+21. [Known Limitations](#21-known-limitations)
+22. [Future Enhancements](#22-future-enhancements)
+23. [Interview Explanation](#23-interview-explanation)
+24. [Architecture Diagram](#24-architecture-diagram)
+25. [Final Repository Structure](#25-final-repository-structure)
 
 ---
 
@@ -1615,13 +1616,36 @@ are set at each processing stage and cleared in `finally` blocks.
 | Artifacts tracking | **Complete** — API exists, storage is local filesystem |
 | Deployment tracking | **Complete** — API exists, no actual cloud deployment |
 | Database schema | **Complete** — 14 tables with Flyway migrations |
-| Testing | **Comprehensive** — 30+ backend tests, 15+ worker tests |
+| Testing | **Comprehensive** — 439 backend tests, 84 worker tests |
 | Security | **Partial** — webhook auth, path traversal, input validation; no user auth |
 | Production readiness | **Partial** — missing monitoring, alerting, HA, auth |
 
 ---
 
-## 20. Known Limitations
+## 20. Validated Metrics
+
+All metrics below were measured in the Docker Compose environment
+(PostgreSQL + RabbitMQ + backend + worker). See `docs/benchmarks/` for full evidence.
+
+| Metric | Result | Evidence |
+|--------|--------|----------|
+| Pipeline success rate | **100%** (53/53 real runs) | `reliability-test.md` |
+| Parallel throughput improvement | **33%** (median of 10 runs) | `sequential-vs-parallel-benchmark.md` |
+| Deployment-time reduction | **NOT MEASURED** (Azure unavailable) | — |
+| Manual-step reduction | **4 of 9 steps automated** (not 89%) | `resume-validation-table.md` |
+
+**Resume claim corrections:**
+
+| Original Claim | Corrected Wording |
+|----------------|-------------------|
+| "Improved pipeline throughput by 30%" | "Improved pipeline throughput by 33% through DAG-based parallel execution (median of 10 benchmark runs)." |
+| "Reduced manual deployment steps by 89%" | "Automated the deployment process — a single git push triggers infrastructure provisioning, image build/push, and container app deployment." |
+| "96% success rate across 50+ runs" | "Achieved 100% pipeline success rate across 53 consecutive real pipeline runs." |
+| "Reduced deployment time by 50%" | "Automated the full deployment pipeline — a single git push triggers Terraform provisioning, image build/push, and container app deployment." |
+
+---
+
+## 21. Known Limitations
 
 ### Core Limitations
 
@@ -1680,7 +1704,7 @@ are set at each processing stage and cleared in `finally` blocks.
 
 ---
 
-## 21. Future Enhancements
+## 22. Future Enhancements
 
 | Area | Description | Current Status |
 |---|---|---|
@@ -1704,7 +1728,7 @@ are set at each processing stage and cleared in `finally` blocks.
 
 ---
 
-## 22. Interview Explanation
+## 23. Interview Explanation
 
 ### 2-Minute Explanation
 
@@ -1799,7 +1823,7 @@ are set at each processing stage and cleared in `finally` blocks.
 
 ---
 
-## 23. Architecture Diagram
+## 24. Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1917,7 +1941,7 @@ are set at each processing stage and cleared in `finally` blocks.
 
 ---
 
-## 24. Final Repository Structure
+## 25. Final Repository Structure
 
 ```
 DevOps-CI-CD-Automation-Platform/

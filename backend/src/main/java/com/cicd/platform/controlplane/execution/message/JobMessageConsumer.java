@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,11 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
+@ConditionalOnProperty(
+        name = "execution.dispatch.consume-enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 public class JobMessageConsumer {
 
     private static final Logger log =
@@ -129,7 +135,7 @@ public class JobMessageConsumer {
 
             if (claimed == 0) {
 
-                log.info("[JOB_SKIPPED] jobId={}, status={}, reason=not-QUEUED",
+                log.info("[JOB_CLAIM_LOST] jobId={}, status={}, reason=not-QUEUED",
                         message.jobId(), job.getStatus());
 
                 channel.basicAck(deliveryTag, false);
@@ -201,7 +207,8 @@ public class JobMessageConsumer {
                     message.commitSha(),
                     message.attemptNumber(),
                     workspaceConfig.getTimeoutSeconds(),
-                    workspaceConfig.getWorkerId()
+                    workspaceConfig.getWorkerId(),
+                    message.steps()
             );
 
             // ---------------------------------------------------------
@@ -240,6 +247,10 @@ public class JobMessageConsumer {
             // 10. Notify orchestrator
             // ---------------------------------------------------------
 
+            // The orchestrator is the single writer of stage/run state. It is
+            // handed the attempt's own start/finish instants so that parallel
+            // branches are recorded with real, non-overlapping-by-accident
+            // timestamps.
             orchestrator.handleJobCompletion(
                     message.jobId(),
                     success,

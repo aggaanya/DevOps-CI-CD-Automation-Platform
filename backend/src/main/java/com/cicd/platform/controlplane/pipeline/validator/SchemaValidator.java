@@ -3,7 +3,9 @@ package com.cicd.platform.controlplane.pipeline.validator;
 import com.cicd.platform.controlplane.pipeline.config.JobConfig;
 import com.cicd.platform.controlplane.pipeline.config.PipelineConfig;
 import com.cicd.platform.controlplane.pipeline.config.StageConfig;
+import com.cicd.platform.controlplane.pipeline.config.StepConfig;
 
+import java.util.List;
 import java.util.Set;
 
 public class SchemaValidator {
@@ -11,6 +13,9 @@ public class SchemaValidator {
     private static final Set<String> VALID_JOB_TYPES = Set.of(
             "BUILD", "TEST", "SCAN", "DEPLOY", "PACKAGE", "CUSTOM"
     );
+
+    private static final int MAX_STEPS_PER_JOB = 50;
+    private static final int MAX_STEP_COMMAND_LENGTH = 4096;
 
     public PipelineValidationResult validate(PipelineConfig config) {
         PipelineValidationResult result = new PipelineValidationResult();
@@ -75,6 +80,36 @@ public class SchemaValidator {
             } else if (!VALID_JOB_TYPES.contains(job.getType().toUpperCase())) {
                 result.addError(jobPath + ".type", "INVALID",
                         "Invalid job type '" + job.getType() + "'. Valid types: " + VALID_JOB_TYPES);
+            }
+
+            validateSteps(job, jobPath, result);
+        }
+    }
+
+    private void validateSteps(JobConfig job, String jobPath, PipelineValidationResult result) {
+        List<StepConfig> steps = job.getSteps();
+        if (steps == null || steps.isEmpty()) {
+            return;
+        }
+        if (steps.size() > MAX_STEPS_PER_JOB) {
+            result.addError(jobPath + ".steps", "SIZE",
+                    "Job must not declare more than " + MAX_STEPS_PER_JOB + " steps");
+        }
+        for (int s = 0; s < steps.size(); s++) {
+            StepConfig step = steps.get(s);
+            String stepPath = jobPath + ".steps[" + s + "]";
+            if (step == null) {
+                result.addError(stepPath, "REQUIRED", "Step definition must not be null");
+                continue;
+            }
+            if (step.getName() != null && step.getName().length() > 255) {
+                result.addError(stepPath + ".name", "SIZE", "Step name must not exceed 255 characters");
+            }
+            if (step.getRun() == null || step.getRun().isBlank()) {
+                result.addError(stepPath + ".run", "REQUIRED", "Step 'run' command is required");
+            } else if (step.getRun().length() > MAX_STEP_COMMAND_LENGTH) {
+                result.addError(stepPath + ".run", "SIZE",
+                        "Step 'run' command must not exceed " + MAX_STEP_COMMAND_LENGTH + " characters");
             }
         }
     }

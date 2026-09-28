@@ -31,13 +31,19 @@ import java.util.List;
  * service.
  *
  * <p>ACK policy (manual): the message is acknowledged only after the job has
- * been fully handled — a result was published (for workload outcomes) or the
+ * been fully handled \u2014 a result was published (for workload outcomes) or the
  * message was routed to retry/DLQ. Malformed or permanently invalid messages
  * are rejected into the dead-letter queue. Transient infrastructure failures
  * are retried through the delay queue up to {@code worker.max-retries}.</p>
  *
  * <p>RabbitMQ is at-least-once: {@link DuplicateJobGuard} prevents double
  * execution of the same {@code jobId} within this process.</p>
+ *
+ * <p>This consumer listens on two queues:
+ * <ul>
+ *   <li>{@code cicd.jobs} \u2014 legacy manual trigger format (loads pipeline.yml from repo)</li>
+ *   <li>{@code pipeline-jobs} \u2014 control plane DAG dispatch format (uses declared steps from PipelineVersion)</li>
+ * </ul>
  */
 @Component
 public class PipelineJobConsumer {
@@ -68,8 +74,23 @@ public class PipelineJobConsumer {
         this.props = props;
     }
 
+    /**
+     * Legacy manual trigger queue \u2014 loads pipeline.yml from repository.
+     */
     @RabbitListener(queues = "${worker.rabbit.job-queue}")
     public void onMessage(Message message, Channel channel) throws IOException {
+        handleMessage(message, channel, "cicd.jobs");
+    }
+
+    /**
+     * Control plane DAG dispatch queue \u2014 uses declared steps from PipelineVersion.
+     */
+    @RabbitListener(queues = "pipeline-jobs")
+    public void onDispatchMessage(Message message, Channel channel) throws IOException {
+        handleMessage(message, channel, "pipeline-jobs");
+    }
+
+    private void handleMessage(Message message, Channel channel, String queueName) throws IOException {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
         String body = new String(message.getBody(), StandardCharsets.UTF_8);
 
@@ -78,20 +99,21 @@ public class PipelineJobConsumer {
             job = objectMapper.readValue(body, PipelineJob.class);
             jobValidator.validate(job);
         } catch (JsonProcessingException e) {
-            log.warn("Rejecting malformed job message (tag {}): {}", deliveryTag, safeBody(body));
+            log.warn("Rejecting malformed job message from {} (tag {}): {}", queueName, deliveryTag, safeBody(body));
             channel.basicReject(deliveryTag, false);
             metrics.countMalformed();
             return;
         } catch (PipelineJobValidationException e) {
-            log.warn("Rejecting invalid job (tag {}): {}", deliveryTag, e.getMessage());
+            log.warn("Rejecting invalid job from {} (tag {}): {}", queueName, deliveryTag, e.getMessage());
             publishFailure(jobIdOrUnknown(job));
             channel.basicReject(deliveryTag, false);
             metrics.countValidationFailure();
             return;
         }
 
-        if (!duplicateJobGuard.tryAcquire(job.jobId())) {
-            log.info("Duplicate job {} detected; skipping execution", job.jobId());
+        int attemptNumber = job.attemptNumber() != null ? job.attemptNumber() : 0;
+        if (!duplicateJobGuard.tryAcquire(job.jobId(), attemptNumber)) {
+            log.info("Duplicate job {} (attempt {}) detected; skipping execution", job.jobId(), attemptNumber);
             channel.basicAck(deliveryTag, false);
             return;
         }
@@ -99,36 +121,37 @@ public class PipelineJobConsumer {
         metrics.jobStarted();
         try {
             PipelineResult result = executionService.execute(job);
-            duplicateJobGuard.markCompleted(job.jobId());
+            duplicateJobGuard.markCompleted(job.jobId(), attemptNumber);
             metrics.jobFinished(result.status());
             resultPublisher.publish(result);
             channel.basicAck(deliveryTag, false);
-            log.info("Acknowledged job {} after {} ms with status {}",
-                    job.jobId(), result.durationMs(), result.status());
+            log.info("Acknowledged job {} from {} after {} ms with status {}",
+                    job.jobId(), queueName, result.durationMs(), result.status());
         } catch (WorkerException e) {
             metrics.jobInfrastructureFailure();
-            handleInfrastructureFailure(message, job, deliveryTag, channel, e);
+            handleInfrastructureFailure(message, job, deliveryTag, channel, e, attemptNumber);
         } catch (Exception e) {
             metrics.jobInfrastructureFailure();
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             log.error("Unexpected failure handling job {}: {}", job.jobId(), msg, e);
             handleInfrastructureFailure(message, job, deliveryTag, channel,
-                    new WorkerException("Unexpected failure: " + msg, e));
+                    new WorkerException("Unexpected failure: " + msg, e), attemptNumber);
         }
     }
 
     private void handleInfrastructureFailure(Message message, PipelineJob job, long deliveryTag,
-                                             Channel channel, WorkerException failure) throws IOException {
+                                             Channel channel, WorkerException failure,
+                                             int attemptNumber) throws IOException {
         int retryCount = retryCount(message);
         boolean canRetry = props.isRetryEnabled() && retryCount < props.getMaxRetries();
         if (canRetry) {
-            duplicateJobGuard.markFailed(job.jobId());
+            duplicateJobGuard.markFailed(job.jobId(), attemptNumber);
             resultPublisher.publishRetry(job, retryCount);
             channel.basicAck(deliveryTag, false);
             log.warn("Retried job {} (attempt {}) after infrastructure failure: {}",
-                    job.jobId(), retryCount + 1, failure.getMessage());
+                    job.jobId(), attemptNumber, failure.getMessage());
         } else {
-            duplicateJobGuard.markCompleted(job.jobId());
+            duplicateJobGuard.markCompleted(job.jobId(), attemptNumber);
             publishFailure(job, "Infrastructure failure: " + failure.getMessage());
             channel.basicReject(deliveryTag, false);
             log.error("Permanently failed job {} (retries exhausted): {}", job.jobId(), failure.getMessage());

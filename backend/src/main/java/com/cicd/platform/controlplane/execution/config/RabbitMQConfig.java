@@ -108,15 +108,51 @@ public class RabbitMQConfig {
         return template;
     }
 
+    /**
+     * Consumer pool for the job dispatch queue.
+     *
+     * <p>This is the setting that decides whether the platform can actually run two
+     * independent jobs at once. Publishing messages quickly is not enough: a single
+     * consumer thread would take one message, run it to completion, and only then
+     * pick up the next — the queue would look parallel while the timeline stayed
+     * strictly serial. {@code WORKER_CONCURRENCY} sizes the pool, and it is a hard
+     * cap, not a hint: threads are never created beyond
+     * {@code maxConcurrentConsumers}.
+     *
+     * <p>Prefetch is tied to the pool size. With {@code prefetch = 1} and four
+     * consumers, a broker can still hand all queued work to a single thread, which
+     * serialises execution while reporting a healthy connection. Matching prefetch
+     * to the consumer count is what makes the pool effective.
+     */
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory) {
+        return buildFactory(connectionFactory, workspaceConfig.getConcurrency());
+    }
+
+    /**
+     * Consumer pool for the (single-threaded) result and outbox consumers.
+     *
+     * <p>Deliberately separate from the job pool: a slow persistence handler must
+     * never be able to starve job execution of consumer threads.
+     */
+    @Bean
+    public SimpleRabbitListenerContainerFactory controlPlaneListenerContainerFactory(
+            ConnectionFactory connectionFactory) {
+        return buildFactory(connectionFactory, 1);
+    }
+
+    private SimpleRabbitListenerContainerFactory buildFactory(ConnectionFactory connectionFactory,
+                                                             int concurrency) {
+        int consumers = Math.max(1, concurrency);
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(jsonMessageConverter());
-        factory.setPrefetchCount(workspaceConfig.getPrefetch());
-        factory.setConcurrentConsumers(workspaceConfig.getConcurrency());
+        factory.setConcurrentConsumers(consumers);
+        factory.setMaxConcurrentConsumers(consumers);
+        factory.setPrefetchCount(workspaceConfig.resolvePrefetch(consumers));
         factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
+        factory.setDefaultRequeueRejected(false);
         factory.setAutoStartup(rabbitProperties.getListener().getSimple().isAutoStartup());
         return factory;
     }

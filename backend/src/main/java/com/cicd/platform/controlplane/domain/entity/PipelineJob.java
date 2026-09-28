@@ -1,7 +1,9 @@
 package com.cicd.platform.controlplane.domain.entity;
 
+import com.cicd.platform.controlplane.pipeline.dag.DependencyNames;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -43,6 +45,14 @@ public class PipelineJob {
     @Column(name = "exit_code")
     private Integer exitCode;
 
+    /**
+     * Resolved DAG edges of this job, as a comma-separated list of lower-cased
+     * sibling job names within the same stage (see {@link DependencyNames}).
+     * {@code null} means the job declared no {@code dependsOn}.
+     */
+    @Column(name = "depends_on", length = 1024)
+    private String dependsOn;
+
     @PrePersist
     protected void onCreate() {}
 
@@ -80,6 +90,17 @@ public class PipelineJob {
     public Integer getExitCode() { return exitCode; }
     public void setExitCode(Integer exitCode) { this.exitCode = exitCode; }
 
+    public String getDependsOn() { return dependsOn; }
+    public void setDependsOn(String dependsOn) { this.dependsOn = dependsOn; }
+
+    /** Persists the declared in-stage job dependencies for this run. */
+    public void setDependencies(List<String> names) { this.dependsOn = DependencyNames.encode(names); }
+
+    /** Lower-cased job names this job declared a dependency on. */
+    public List<String> getDependencies() { return DependencyNames.decode(dependsOn); }
+
+    public boolean hasDeclaredDependencies() { return !getDependencies().isEmpty(); }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -96,7 +117,21 @@ public class PipelineJob {
         BUILD, TEST, SCAN, DEPLOY, PACKAGE, CUSTOM
     }
 
+    /**
+     * Lifecycle of a single job within a run.
+     *
+     * <p>{@link #SKIPPED} is a terminal state distinct from {@link #CANCELLED}: it
+     * means the job was never dispatched because an upstream dependency reached a
+     * terminal non-successful state. Keeping it separate is what lets a failed
+     * branch be reported explicitly instead of looking like an execution failure.
+     */
     public enum JobStatus {
-        PENDING, QUEUED, RUNNING, SUCCESS, FAILED, CANCELLED
+        PENDING, QUEUED, RUNNING, SUCCESS, FAILED, CANCELLED, SKIPPED;
+
+        /** True once the job can no longer change state on its own. */
+        public boolean isTerminal() {
+            return this == SUCCESS || this == FAILED
+                    || this == CANCELLED || this == SKIPPED;
+        }
     }
 }

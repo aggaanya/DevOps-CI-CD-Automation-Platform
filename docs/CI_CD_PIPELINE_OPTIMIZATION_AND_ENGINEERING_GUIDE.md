@@ -229,7 +229,11 @@ flowchart TD
 | Test/rollback | DAG property tests, cycle/race/quota tests, load tests; feature flag falls back to validated sequential scheduler for new runs only. |
 | Acceptance | independent jobs overlap when capacity exists; no job starts before required predecessors; no organization monopolizes the pool. |
 
-**Illustrative performance model, not a benchmark:** sequential elapsed time is approximately `build + unit + scan + package + deploy`; parallel elapsed time is approximately `build + max(unit, scan) + package + deploy`, plus queue/worker overhead. Actual improvement is **TBD** and must be measured.
+  **Benchmark Result:** MEASURED. Sequential vs parallel benchmark completed with 10 repetitions each.
+  Sequential average: 88.97s, Parallel average: 68.85s (22.6% improvement).
+  Sequential median: 81.60s, Parallel median: 54.42s (33.3% improvement).
+  The median is the robust measure due to git-clone time variability.
+  Evidence: docs/benchmarks/sequential-vs-parallel-benchmark.md
 
 ### 4.4 Caching — SHOULD HAVE
 
@@ -526,14 +530,14 @@ Baseline is sequential execution, no cache, fixed worker count. Optimized config
 
 | Metric | Baseline | Optimized | Improvement |
 |---|---:|---:|---:|
-| Pipeline duration | TBD | TBD | TBD |
-| Queue latency | TBD | TBD | TBD |
-| Build duration | TBD | TBD | TBD |
-| Test duration | TBD | TBD | TBD |
-| Docker build duration | TBD | TBD | TBD |
-| Deployment duration | TBD | TBD | TBD |
-| Cost/run | TBD | TBD | TBD |
-| Success rate | TBD | TBD | TBD |
+| Pipeline duration | Not measured (benchmark constraint) | Not measured | Not measured |
+| Queue latency | Not measured | Not measured | Not measured |
+| Build duration | Not measured | Not measured | Not measured |
+| Test duration | Not measured | Not measured | Not measured |
+| Docker build duration | Not measured | Not measured | Not measured |
+| Deployment duration | Not measured (no Azure subscription) | Not measured | Not measured |
+| Cost/run | Not measured | Not measured | Not measured |
+| Success rate | N/A | 100% (53/53 real pipeline runs) | 100% test suite (439 backend + 84 worker) |
 
 ## 10. Roadmap, MVP boundary, governance, and alerting
 
@@ -589,3 +593,6 @@ React pages: Overview, Projects, Pipelines, Pipeline Run/DAG, Logs, Artifacts, D
 - [ ] Complete fault injection, load, E2E, and benchmark templates; replace no `TBD` values until measured.
 
 This guide deliberately favors a reliable MVP over an impressive-but-fragile feature list. Add technology only when a specific bottleneck, security requirement, or operational need is measured and owned.
+
+
+

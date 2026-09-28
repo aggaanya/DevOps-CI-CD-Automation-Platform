@@ -53,6 +53,45 @@ public class RabbitMQConfig {
         return ExchangeBuilder.directExchange(props.getRabbit().getResultsExchange()).durable(true).build();
     }
 
+    /**
+     * Control-plane DAG dispatch queue ({@code pipeline-jobs}).
+     *
+     * <p>Declared here with the exact same arguments the control plane uses, so
+     * the declaration is idempotent no matter which service starts first. The
+     * dead-letter exchange/routing-key mirror the control plane's: a message the
+     * worker rejects (validation failure, exhausted retries) is routed to {@code
+     * pipeline-job-results} for inspection rather than being silently dropped.</p>
+     */
+    @Bean
+    public DirectExchange jobDispatchDeadLetterExchange() {
+        return ExchangeBuilder.directExchange("pipeline-job-results-exchange").durable(true).build();
+    }
+
+    @Bean
+    public Queue jobDispatchQueue() {
+        return QueueBuilder.durable("pipeline-jobs")
+                .withArgument("x-dead-letter-exchange", "pipeline-job-results-exchange")
+                .withArgument("x-dead-letter-routing-key", "job-result")
+                .build();
+    }
+
+    @Bean
+    public Queue jobDispatchDeadLetterQueue() {
+        return QueueBuilder.durable("pipeline-job-results").build();
+    }
+
+    @Bean
+    public Binding jobDispatchBinding(Queue jobDispatchQueue, DirectExchange jobsExchange) {
+        return BindingBuilder.bind(jobDispatchQueue).to(jobsExchange).with("job-dispatch");
+    }
+
+    @Bean
+    public Binding jobDispatchDeadLetterBinding(Queue jobDispatchDeadLetterQueue,
+                                                DirectExchange jobDispatchDeadLetterExchange) {
+        return BindingBuilder.bind(jobDispatchDeadLetterQueue)
+                .to(jobDispatchDeadLetterExchange).with("job-result");
+    }
+
     @Bean
     public Queue jobQueue() {
         return QueueBuilder.durable(props.getRabbit().getJobQueue())

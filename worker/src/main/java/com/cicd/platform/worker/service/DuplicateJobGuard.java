@@ -7,14 +7,19 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Guard against duplicate execution of the same {@code jobId}.
+ * Guard against duplicate execution of the same {@code jobId} within the same
+ * attempt.
  *
  * <p>RabbitMQ offers at-least-once delivery: a consumer crash after
  * processing but before ack, or a redelivery, can deliver the same job twice.
  * Within a single worker process this guard ensures the job runs at most
- * once. Entries expire after {@link #TTL_MILLIS} so the guard does not grow
- * unbounded. Cross-process duplicate protection requires a durable store and
- * is a documented Phase 5 improvement.</p>
+ * once per attempt. Entries expire after {@link #TTL_MILLIS} so the guard does
+ * not grow unbounded. Cross-process duplicate protection requires a durable
+ * store and is a documented Phase 5 improvement.</p>
+ *
+ * <p>The attempt number is part of the key: a retry reuses the same
+ * {@code jobId} but carries a higher {@code attemptNumber}, so it is a new
+ * execution, not a duplicate.</p>
  */
 @Component
 public class DuplicateJobGuard {
@@ -26,36 +31,43 @@ public class DuplicateJobGuard {
 
     /**
      * Atomically claims a job for execution. Returns {@code true} if this
-     * call is the first to claim the {@code jobId} (and the job was not
-     * recently completed), {@code false} if it is a duplicate.
+     * call is the first to claim the {@code jobId} for the given attempt
+     * (and the job was not recently completed for that attempt), {@code false}
+     * if it is a duplicate.
      */
-    public boolean tryAcquire(String jobId) {
+    public boolean tryAcquire(String jobId, int attemptNumber) {
         if (jobId == null) {
             return true;
         }
+        String key = key(jobId, attemptNumber);
         evictExpired();
-        Long previous = inFlight.putIfAbsent(jobId, System.currentTimeMillis());
+        Long previous = inFlight.putIfAbsent(key, System.currentTimeMillis());
         if (previous != null) {
             return false;
         }
-        if (completed.containsKey(jobId)) {
-            inFlight.remove(jobId);
+        if (completed.containsKey(key)) {
+            inFlight.remove(key);
             return false;
         }
         return true;
     }
 
-    public void markRunning(String jobId) {
-        inFlight.put(jobId, System.currentTimeMillis());
+    public void markRunning(String jobId, int attemptNumber) {
+        inFlight.put(key(jobId, attemptNumber), System.currentTimeMillis());
     }
 
-    public void markCompleted(String jobId) {
-        inFlight.remove(jobId);
-        completed.put(jobId, System.currentTimeMillis());
+    public void markCompleted(String jobId, int attemptNumber) {
+        String key = key(jobId, attemptNumber);
+        inFlight.remove(key);
+        completed.put(key, System.currentTimeMillis());
     }
 
-    public void markFailed(String jobId) {
-        inFlight.remove(jobId);
+    public void markFailed(String jobId, int attemptNumber) {
+        inFlight.remove(key(jobId, attemptNumber));
+    }
+
+    private static String key(String jobId, int attemptNumber) {
+        return jobId + ":" + attemptNumber;
     }
 
     private void evictExpired() {

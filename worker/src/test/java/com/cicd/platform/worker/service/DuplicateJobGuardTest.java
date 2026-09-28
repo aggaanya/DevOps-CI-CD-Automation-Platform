@@ -11,37 +11,45 @@ class DuplicateJobGuardTest {
     @Test
     void firstAcquireSucceeds() {
         DuplicateJobGuard guard = new DuplicateJobGuard();
-        assertTrue(guard.tryAcquire("job-1"));
+        assertTrue(guard.tryAcquire("job-1", 1));
     }
 
     @Test
     void duplicateWhileRunningIsRejected() {
         DuplicateJobGuard guard = new DuplicateJobGuard();
-        guard.tryAcquire("job-1");
-        assertFalse(guard.tryAcquire("job-1"));
+        guard.tryAcquire("job-1", 1);
+        assertFalse(guard.tryAcquire("job-1", 1));
     }
 
     @Test
     void duplicateAfterCompletionIsRejected() {
         DuplicateJobGuard guard = new DuplicateJobGuard();
-        guard.tryAcquire("job-1");
-        guard.markCompleted("job-1");
-        assertFalse(guard.tryAcquire("job-1"));
+        guard.tryAcquire("job-1", 1);
+        guard.markCompleted("job-1", 1);
+        assertFalse(guard.tryAcquire("job-1", 1));
     }
 
     @Test
     void failedJobCanBeReacquired() {
         DuplicateJobGuard guard = new DuplicateJobGuard();
-        guard.tryAcquire("job-1");
-        guard.markFailed("job-1");
-        assertTrue(guard.tryAcquire("job-1"));
+        guard.tryAcquire("job-1", 1);
+        guard.markFailed("job-1", 1);
+        assertTrue(guard.tryAcquire("job-1", 1));
+    }
+
+    @Test
+    void retryWithHigherAttemptIsNotDuplicate() {
+        DuplicateJobGuard guard = new DuplicateJobGuard();
+        guard.tryAcquire("job-1", 1);
+        guard.markCompleted("job-1", 1);
+        assertTrue(guard.tryAcquire("job-1", 2));
     }
 
     @Test
     void differentJobsAreIndependent() {
         DuplicateJobGuard guard = new DuplicateJobGuard();
-        guard.tryAcquire("job-1");
-        assertTrue(guard.tryAcquire("job-2"));
+        guard.tryAcquire("job-1", 1);
+        assertTrue(guard.tryAcquire("job-2", 1));
     }
 
     @Test
@@ -55,7 +63,7 @@ class DuplicateJobGuardTest {
             workers[i] = new Thread(() -> {
                 try {
                     start.await();
-                    if (guard.tryAcquire("job-1")) {
+                    if (guard.tryAcquire("job-1", 1)) {
                         acquired.incrementAndGet();
                     }
                 } catch (InterruptedException e) {
@@ -74,9 +82,9 @@ class DuplicateJobGuardTest {
     @Test
     void runningJobsAreTracked() {
         DuplicateJobGuard guard = new DuplicateJobGuard();
-        guard.tryAcquire("job-1");
-        guard.tryAcquire("job-2");
-        assertTrue(guard.runningJobs().contains("job-1"));
-        assertTrue(guard.runningJobs().contains("job-2"));
+        guard.tryAcquire("job-1", 1);
+        guard.tryAcquire("job-2", 1);
+        assertTrue(guard.runningJobs().contains("job-1:1"));
+        assertTrue(guard.runningJobs().contains("job-2:1"));
     }
 }

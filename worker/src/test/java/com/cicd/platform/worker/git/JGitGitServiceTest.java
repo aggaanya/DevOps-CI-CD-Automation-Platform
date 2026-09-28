@@ -5,6 +5,7 @@ import com.cicd.platform.worker.TestGitRepo;
 import com.cicd.platform.worker.config.WorkerProperties;
 import com.cicd.platform.worker.domain.PipelineJob;
 import com.cicd.platform.worker.exception.GitOperationException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,6 +20,12 @@ class JGitGitServiceTest {
 
     @TempDir
     Path tempDir;
+
+    @AfterEach
+    void releaseFileHandles() throws Exception {
+        System.gc();
+        Thread.sleep(200);
+    }
 
     @Test
     void checksOutExactCommit() throws Exception {

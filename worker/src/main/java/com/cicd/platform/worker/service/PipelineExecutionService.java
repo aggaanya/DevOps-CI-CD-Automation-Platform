@@ -18,7 +18,10 @@ import com.cicd.platform.worker.logging.MdcContext;
 import com.cicd.platform.worker.pipeline.PipelineLoader;
 import com.cicd.platform.worker.pipeline.PipelineParser;
 import com.cicd.platform.worker.pipeline.PipelineValidator;
+import com.cicd.platform.worker.pipeline.model.JobDefinition;
 import com.cicd.platform.worker.pipeline.model.PipelineDefinition;
+import com.cicd.platform.worker.pipeline.model.StepDefinition;
+import com.cicd.platform.worker.pipeline.model.StepType;
 import com.cicd.platform.worker.workspace.Workspace;
 import com.cicd.platform.worker.workspace.WorkspaceManager;
 import org.slf4j.Logger;
@@ -28,6 +31,7 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -36,9 +40,17 @@ import java.util.concurrent.TimeUnit;
  * Orchestrates the full lifecycle of one pipeline job:
  *
  * <pre>
- *   validate (consumer) → workspace → git clone/checkout → pipeline load
- *   → parse → validate → execute → result → cleanup (always)
+ *   validate (consumer) -> workspace -> git clone/checkout -> pipeline load
+ *   -> parse -> validate -> execute -> result -> cleanup (always)
  * </pre>
+ *
+ * <p>Two execution modes:
+ * <ul>
+ *   <li><b>Legacy mode</b> (manual trigger): loads pipeline.yml from repository,
+ *       parses and validates, executes entire pipeline.</li>
+ *   <li><b>Control plane mode</b> (DAG dispatch): uses declared steps from
+ *       PipelineVersion, executes single job, still checks out repository for source code.</li>
+ * </ul>
  *
  * <p>Returns a {@link PipelineResult} for every workload outcome (build/test
  * failures included). Infrastructure failures (git, workspace, sandbox) are
@@ -89,7 +101,9 @@ public class PipelineExecutionService {
         Instant startedAt = Instant.now();
         MdcContext.putJob(props.getId(), job.jobId(), job.pipelineId(),
                 job.repositoryUrl(), job.commitSha());
-        log.info("Received job: repository={}, commit={}", redactedUrl(job.repositoryUrl()), job.commitSha());
+        log.info("Received job: repository={}, commit={}, mode={}",
+                redactedUrl(job.repositoryUrl()), job.commitSha(),
+                job.hasDeclaredSteps() ? "control-plane" : "legacy");
 
         Workspace workspace = null;
         ExecutionContext ctx = null;
@@ -100,16 +114,23 @@ public class PipelineExecutionService {
 
             scheduleWatchdog(ctx, workspace);
             try {
+                // Always checkout the repository at the requested commit for source code access
                 CommitInfo commit = gitService.checkoutCommit(job, workspace.repoDir());
                 log.info("Prepared repository at commit {} (branch {})", commit.commitSha(), commit.branch());
 
-                var pipelineFile = pipelineLoader.locate(workspace.repoDir(), job.pipelineFile());
-                PipelineDefinition pipeline = pipelineParser.parse(pipelineFile);
-                pipelineValidator.validate(pipeline);
+                if (job.hasDeclaredSteps()) {
+                    // Control plane mode: execute single job with declared steps
+                    return executeSingleJob(ctx, job, commit, startedAt);
+                } else {
+                    // Legacy mode: load pipeline from repository and execute entire pipeline
+                    var pipelineFile = pipelineLoader.locate(workspace.repoDir(), job.pipelineFile());
+                    PipelineDefinition pipeline = pipelineParser.parse(pipelineFile);
+                    pipelineValidator.validate(pipeline);
 
-                PipelineExecutor.ExecutionOutcome outcome = pipelineExecutor.execute(ctx, pipeline);
-                return buildResult(job, outcome.status(), outcome.stages(), startedAt,
-                        commit.commitSha(), outcomeSummary(outcome));
+                    PipelineExecutor.ExecutionOutcome outcome = pipelineExecutor.execute(ctx, pipeline);
+                    return buildResult(job, outcome.status(), outcome.stages(), startedAt,
+                            commit.commitSha(), outcomeSummary(outcome));
+                }
             } catch (Exception e) {
                 log.error("Execution failed for job {}: {}", job.jobId(), safeMessage(e));
                 throw e;
@@ -141,6 +162,63 @@ public class PipelineExecutionService {
             }
             MdcContext.clear();
         }
+    }
+
+    /**
+     * Executes a single job using the declared steps from the control plane.
+     * The repository is already checked out at the correct commit.
+     * Creates a synthetic single-job pipeline and delegates to PipelineExecutor.
+     */
+    private PipelineResult executeSingleJob(ExecutionContext ctx, PipelineJob job, CommitInfo commit, Instant startedAt) {
+        ctx.logs().log("=== JOB: " + job.jobName() + " (control plane dispatch) ===");
+        Instant jobStartedAt = Instant.now();
+
+        List<PipelineJob.WorkerStepDefinition> workerSteps = job.steps();
+
+        // Convert worker steps to pipeline model steps
+        List<StepDefinition> steps = workerSteps.stream().map(ws -> {
+            String stepName = ws.name() != null && !ws.name().isBlank()
+                    ? ws.name() : "step";
+            return new StepDefinition(StepType.RUN, stepName, ws.run(), null);
+        }).toList();
+
+        // Create synthetic single-job, single-stage pipeline
+        JobDefinition jobDef = new JobDefinition(
+                job.jobName(),
+                null,           // workingDirectory
+                null,           // image
+                Map.of(),       // env
+                steps,          // steps
+                List.of()       // artifacts
+        );
+
+        com.cicd.platform.worker.pipeline.model.StageDefinition stageDef =
+                new com.cicd.platform.worker.pipeline.model.StageDefinition(job.jobName(), List.of(jobDef));
+
+        PipelineDefinition syntheticPipeline = new PipelineDefinition(
+                job.jobName(),
+                List.of(stageDef),
+                "control-plane-dispatch"
+        );
+
+        // Execute via PipelineExecutor
+        PipelineExecutor.ExecutionOutcome outcome = pipelineExecutor.execute(ctx, syntheticPipeline);
+
+        // Convert outcome to PipelineResult
+        JobStatus finalStatus = outcome.status();
+        String message = finalStatus == JobStatus.SUCCESS ? "Job completed successfully"
+                : outcome.stages().stream()
+                .flatMap(s -> s.jobs().stream())
+                .filter(j -> j.status() != JobStatus.SUCCESS)
+                .findFirst()
+                .map(j -> "Job '" + j.name() + "' " + j.status() + (j.error() != null ? ": " + j.error() : ""))
+                .orElse(finalStatus.name());
+
+        Instant completedAt = Instant.now();
+        return new PipelineResult(job.jobId(), job.pipelineId(), finalStatus, props.getId(),
+                redactedUrl(job.repositoryUrl()), commit.commitSha(), job.branch(),
+                startedAt, completedAt, Math.max(0L, completedAt.toEpochMilli() - startedAt.toEpochMilli()),
+                outcome.stages(), message);
     }
 
     private void scheduleWatchdog(ExecutionContext ctx, Workspace workspace) {

@@ -1,0 +1,63 @@
+{
+  "date": "2026-09-28",
+  "environment": "Docker Compose (PostgreSQL 16 + RabbitMQ 3.13 + backend + worker)",
+  "repository": "https://github.com/aggaanya/RealShield-Deepfake-Detection-Digital-Identity-Verifier",
+  "commitSha": "39956a86df5ce8955ab02bbc12d6f0036ea1b29b",
+  "results": {
+    "parallelExecution": {
+      "verified": true,
+      "evidence": "parallel-execution-validation.md",
+      "detail": "TEST and SCAN started at the same instant (12:27:40.440) and overlapped for ~10.5s. PACKAGE started only after both finished."
+    },
+    "sequentialVsParallelBenchmark": {
+      "sequentialRuns": 10,
+      "parallelRuns": 10,
+      "sequentialAverageSec": 88.97,
+      "sequentialMedianSec": 81.60,
+      "parallelAverageSec": 68.85,
+      "parallelMedianSec": 54.42,
+      "improvementAverage": "22.6%",
+      "improvementMedian": "33.3%",
+      "evidence": "sequential-vs-parallel-benchmark.md"
+    },
+    "reliabilityTest": {
+      "totalRuns": 53,
+      "successful": 53,
+      "failed": 0,
+      "successRate": "100%",
+      "evidence": "reliability-test.md"
+    },
+    "failurePropagation": {
+      "verified": true,
+      "detail": "BUILD→SUCCESS, TEST→FAILED, SCAN→SKIPPED, PACKAGE→SKIPPED, RUN→FAILED",
+      "evidence": "failure-propagation.md"
+    },
+    "webhookSecurity": {
+      "validSignature": "PASS (202 Accepted)",
+      "invalidSignature": "PASS (403 Forbidden)",
+      "duplicateDeliveryId": "PASS (idempotent, no duplicate runs)",
+      "evidence": "webhook-verification.md"
+    },
+    "controlPlaneToWorker": {
+      "verified": true,
+      "detail": "PipelineVersion → RabbitMQ pipeline-jobs → worker → git checkout → declared steps → result → control plane → SUCCESS",
+      "evidence": "e2e-control-plane-worker-validation.md"
+    }
+  },
+  "resumeClaims": {
+    "deploymentTimeReduction": "NOT MEASURED (Azure unavailable)",
+    "manualStepReduction": "NOT DEFENSIBLE (4 of 9 steps automated, not 9 of 9)",
+    "successRate": "CHANGE: 96% → 100% (53/53 measured)",
+    "throughputImprovement": "CHANGE: 30% → 33% (median of 10 runs)"
+  },
+  "azure": {
+    "terraformFmt": "PASS",
+    "terraformValidate": "PASS",
+    "githubActionsYaml": "PASS (OIDC, no secrets)",
+    "liveDeployment": "NOT AVAILABLE (no Azure subscription)"
+  },
+  "testSuites": {
+    "backend": "439 tests, 0 failures, 0 errors",
+    "worker": "84 tests, 0 failures, 0 errors"
+  }
+}

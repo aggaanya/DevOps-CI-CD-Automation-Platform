@@ -1,0 +1,28 @@
+pipeline:
+  name: benchmark-parallel
+  stages:
+    - name: build
+      jobs:
+        - name: compile
+          type: custom
+          steps:
+            - run: "echo 'BUILD START' && sleep 3 && echo 'BUILD DONE'"
+    - name: quality
+      jobs:
+        - name: unit-test
+          type: test
+          dependsOn: [compile]
+          steps:
+            - run: "echo 'TEST START' && sleep 5 && echo 'TEST DONE'"
+        - name: security-scan
+          type: scan
+          dependsOn: [compile]
+          steps:
+            - run: "echo 'SCAN START' && sleep 4 && echo 'SCAN DONE'"
+    - name: package
+      jobs:
+        - name: package
+          type: package
+          dependsOn: [unit-test, security-scan]
+          steps:
+            - run: "echo 'PACKAGE START' && sleep 2 && echo 'PACKAGE DONE'"

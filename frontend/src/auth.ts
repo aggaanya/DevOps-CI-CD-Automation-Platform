@@ -3,7 +3,9 @@ import type { UserManagerSettings } from 'oidc-client-ts'
 
 const REALM = 'cicd-platform'
 const CLIENT_ID = 'cicd-frontend'
-const KEYCLOAK_AUTHORITY = `http://localhost:8083/realms/${REALM}`
+const KEYCLOAK_AUTHORITY =
+  import.meta.env.VITE_KEYCLOAK_AUTHORITY ||
+  `http://localhost:8083/realms/${REALM}`
 
 const userManagerSettings: UserManagerSettings = {
   authority: KEYCLOAK_AUTHORITY,
@@ -44,16 +46,21 @@ export async function freshAccessToken(): Promise<string | null> {
   return user.access_token
 }
 
-let sessionRestore: Promise<User | null> | null = null
+export type RestoreResult =
+  | { status: 'authenticated'; user: User }
+  | { status: 'login-required' }
+  | { status: 'error'; message: string }
 
-export function restoreSession(): Promise<User | null> {
+let sessionRestore: Promise<RestoreResult> | null = null
+
+export function restoreSession(): Promise<RestoreResult> {
   if (!sessionRestore) {
     sessionRestore = (async () => {
       try {
         if (isOidcCallback()) {
           const user = await userManager.signinRedirectCallback()
           window.history.replaceState({}, document.title, window.location.pathname)
-          return user
+          return { status: 'authenticated', user }
         }
         let user = await userManager.getUser()
         if (user?.expired) {
@@ -61,12 +68,12 @@ export function restoreSession(): Promise<User | null> {
         }
         if (!user) {
           await userManager.signinRedirect()
-          return null
+          return { status: 'login-required' }
         }
-        return user
+        return { status: 'authenticated', user }
       } catch (err) {
         console.error('Failed to restore OIDC session', err)
-        return null
+        return { status: 'error', message: err instanceof Error ? err.message : 'Unable to verify your session.' }
       }
     })()
   }

@@ -32,7 +32,7 @@ public class PipelineJobValidator {
             throw new PipelineJobValidationException("Job message is empty");
         }
         requireValid(job.jobId(), JOB_ID, "jobId");
-        requireValid(job.pipelineId(), PIPELINE_ID, "pipelineId");
+        validatePipelineIdentity(job);
         requireValidRepository(job.repositoryUrl());
         requireValid(job.commitSha(), SHA, "commitSha");
         if (job.branch() != null && !job.branch().isBlank()
@@ -59,6 +59,31 @@ public class PipelineJobValidator {
         if (job.pipelineFile() != null && !job.pipelineFile().isBlank()
                 && job.pipelineFile().length() > 256) {
             throw new PipelineJobValidationException("pipelineFile is too long");
+        }
+    }
+
+    /**
+     * A job must carry a pipeline identity. Two formats exist:
+     * <ul>
+     *   <li><b>Legacy manual trigger</b> — {@code pipelineId} is present.</li>
+     *   <li><b>Control-plane DAG dispatch</b> — {@code pipelineVersionId} is
+     *       present (the dispatch message carries the immutable version id, not
+     *       the logical pipeline id).</li>
+     * </ul>
+     * Whichever is present is validated against the same strict pattern; a job
+     * with neither is rejected.
+     */
+    private void validatePipelineIdentity(PipelineJob job) {
+        boolean hasPipelineId = job.pipelineId() != null && !job.pipelineId().isBlank();
+        boolean hasVersionId = job.pipelineVersionId() != null && !job.pipelineVersionId().isBlank();
+        if (!hasPipelineId && !hasVersionId) {
+            throw new PipelineJobValidationException("Invalid pipelineId value");
+        }
+        if (hasPipelineId) {
+            requireValid(job.pipelineId(), PIPELINE_ID, "pipelineId");
+        }
+        if (hasVersionId) {
+            requireValid(job.pipelineVersionId(), PIPELINE_ID, "pipelineVersionId");
         }
     }
 

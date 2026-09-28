@@ -50,7 +50,7 @@ public class JGitGitService implements GitService {
         long timeoutMs = props.getGit().getCloneTimeoutMs();
         CredentialsProvider credentialsProvider = credentials.resolve();
 
-        try (Git git = clone(url, targetDir, credentialsProvider, timeoutMs)) {
+        try (Git git = clone(url, targetDir, credentialsProvider, timeoutMs, job.branch())) {
             Repository repository = git.getRepository();
 
             fetchTagsAndBranches(git, credentialsProvider, timeoutMs);
@@ -88,17 +88,20 @@ public class JGitGitService implements GitService {
         }
     }
 
-    private Git clone(String url, Path targetDir, CredentialsProvider credentialsProvider, long timeoutMs)
-            throws Exception {
+    private Git clone(String url, Path targetDir, CredentialsProvider credentialsProvider, long timeoutMs,
+                      String branch) throws Exception {
         try {
-            return Git.cloneRepository()
+            var cloneCmd = Git.cloneRepository()
                     .setURI(url)
                     .setDirectory(targetDir.toFile())
-                    .setCloneAllBranches(true)
+                    .setCloneAllBranches(false)
                     .setNoCheckout(true)
                     .setCredentialsProvider(credentialsProvider)
-                    .setTimeout((int) TimeUnit.MILLISECONDS.toSeconds(timeoutMs))
-                    .call();
+                    .setTimeout((int) TimeUnit.MILLISECONDS.toSeconds(timeoutMs));
+            if (branch != null && !branch.isBlank()) {
+                cloneCmd.setBranchesToClone(java.util.List.of("refs/heads/" + branch));
+            }
+            return cloneCmd.call();
         } catch (GitAPIException e) {
             throw new GitOperationException("Clone failed for " + sanitizedUrl(url) + ": " + safeMessage(e), e);
         }

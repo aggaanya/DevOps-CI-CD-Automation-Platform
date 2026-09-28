@@ -8,6 +8,7 @@ public class JobConfig {
     private String name;
     private String type;
     private List<String> dependsOn = new ArrayList<>();
+    private List<StepConfig> steps = new ArrayList<>();
 
     public JobConfig() {}
 
@@ -15,6 +16,7 @@ public class JobConfig {
         this.name = name;
         this.type = type;
         this.dependsOn = new ArrayList<>();
+        this.steps = new ArrayList<>();
     }
 
     public String getName() { return name; }
@@ -25,4 +27,7 @@ public class JobConfig {
 
     public List<String> getDependsOn() { return dependsOn; }
     public void setDependsOn(List<String> dependsOn) { this.dependsOn = dependsOn != null ? dependsOn : new ArrayList<>(); }
+
+    public List<StepConfig> getSteps() { return steps; }
+    public void setSteps(List<StepConfig> steps) { this.steps = steps != null ? steps : new ArrayList<>(); }
 }

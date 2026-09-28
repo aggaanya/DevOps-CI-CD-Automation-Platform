@@ -96,8 +96,14 @@ class StageResultCollectorTest {
         assertEquals(PipelineRun.RunStatus.SUCCESS, status);
     }
 
+    /**
+     * SKIPPED is terminal, so SUCCESS + SKIPPED is a finished run — and a finished
+     * run in which something never executed is a failed run. Reporting RUNNING here
+     * would leave the run permanently un-terminal, which is exactly the "hung
+     * pipeline" this class is written to avoid.
+     */
     @Test
-    void evaluateRunStatus_mixedSuccessAndSkipped_returnsRunning() {
+    void evaluateRunStatus_mixedSuccessAndSkipped_returnsFailed() {
         PipelineStage s1 = new PipelineStage();
         s1.setStatus(PipelineStage.StageStatus.SUCCESS);
         PipelineStage s2 = new PipelineStage();
@@ -105,7 +111,19 @@ class StageResultCollectorTest {
 
         PipelineRun.RunStatus status = collector.evaluateRunStatus(List.of(s1, s2));
 
-        assertEquals(PipelineRun.RunStatus.RUNNING, status);
+        assertEquals(PipelineRun.RunStatus.FAILED, status);
+    }
+
+    @Test
+    void evaluateRunStatus_allSkipped_returnsFailed() {
+        PipelineStage s1 = new PipelineStage();
+        s1.setStatus(PipelineStage.StageStatus.SKIPPED);
+        PipelineStage s2 = new PipelineStage();
+        s2.setStatus(PipelineStage.StageStatus.SKIPPED);
+
+        PipelineRun.RunStatus status = collector.evaluateRunStatus(List.of(s1, s2));
+
+        assertEquals(PipelineRun.RunStatus.FAILED, status);
     }
 
     @Test
@@ -144,5 +162,46 @@ class StageResultCollectorTest {
         PipelineStage.StageStatus status = collector.evaluateStageStatus(stage, List.of(job1, job2));
 
         assertEquals(PipelineStage.StageStatus.RUNNING, status);
+    }
+
+    @Test
+    void evaluateStageStatus_allJobsSkipped_returnsSkipped() {
+        PipelineStage stage = new PipelineStage();
+        PipelineJob job1 = new PipelineJob();
+        job1.setStatus(PipelineJob.JobStatus.SKIPPED);
+        PipelineJob job2 = new PipelineJob();
+        job2.setStatus(PipelineJob.JobStatus.SKIPPED);
+
+        PipelineStage.StageStatus status = collector.evaluateStageStatus(stage, List.of(job1, job2));
+
+        assertEquals(PipelineStage.StageStatus.SKIPPED, status);
+    }
+
+    @Test
+    void evaluateStageStatus_mixedSuccessAndSkipped_returnsSuccess() {
+        PipelineStage stage = new PipelineStage();
+        PipelineJob job1 = new PipelineJob();
+        job1.setStatus(PipelineJob.JobStatus.SUCCESS);
+        PipelineJob job2 = new PipelineJob();
+        job2.setStatus(PipelineJob.JobStatus.SKIPPED);
+
+        PipelineStage.StageStatus status = collector.evaluateStageStatus(stage, List.of(job1, job2));
+
+        assertEquals(PipelineStage.StageStatus.SUCCESS, status);
+    }
+
+    @Test
+    void evaluateStageStatus_mixedSuccessAndFailedAndSkipped_returnsFailed() {
+        PipelineStage stage = new PipelineStage();
+        PipelineJob job1 = new PipelineJob();
+        job1.setStatus(PipelineJob.JobStatus.SUCCESS);
+        PipelineJob job2 = new PipelineJob();
+        job2.setStatus(PipelineJob.JobStatus.FAILED);
+        PipelineJob job3 = new PipelineJob();
+        job3.setStatus(PipelineJob.JobStatus.SKIPPED);
+
+        PipelineStage.StageStatus status = collector.evaluateStageStatus(stage, List.of(job1, job2, job3));
+
+        assertEquals(PipelineStage.StageStatus.FAILED, status);
     }
 }

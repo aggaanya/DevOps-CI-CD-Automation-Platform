@@ -1,7 +1,9 @@
 package com.cicd.platform.controlplane.domain.entity;
 
+import com.cicd.platform.controlplane.pipeline.dag.DependencyNames;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -37,6 +39,15 @@ public class PipelineStage {
     @Column(name = "finished_at")
     private Instant finishedAt;
 
+    /**
+     * Resolved DAG edges of this stage, as a comma-separated list of lower-cased
+     * sibling stage names (see {@link DependencyNames}). {@code null} means the
+     * stage declared no {@code dependsOn} and the scheduler applies the
+     * documented positional fallback.
+     */
+    @Column(name = "depends_on", length = 1024)
+    private String dependsOn;
+
     @PrePersist
     protected void onCreate() {}
 
@@ -68,6 +79,17 @@ public class PipelineStage {
     public Instant getFinishedAt() { return finishedAt; }
     public void setFinishedAt(Instant finishedAt) { this.finishedAt = finishedAt; }
 
+    public String getDependsOn() { return dependsOn; }
+    public void setDependsOn(String dependsOn) { this.dependsOn = dependsOn; }
+
+    /** Persists the declared stage dependencies for this run. */
+    public void setDependencies(List<String> names) { this.dependsOn = DependencyNames.encode(names); }
+
+    /** Lower-cased stage names this stage declared a dependency on. */
+    public List<String> getDependencies() { return DependencyNames.decode(dependsOn); }
+
+    public boolean hasDeclaredDependencies() { return !getDependencies().isEmpty(); }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -81,6 +103,11 @@ public class PipelineStage {
     }
 
     public enum StageStatus {
-        PENDING, RUNNING, SUCCESS, FAILED, SKIPPED
+        PENDING, RUNNING, SUCCESS, FAILED, SKIPPED;
+
+        /** True once the stage can no longer change state on its own. */
+        public boolean isTerminal() {
+            return this == SUCCESS || this == FAILED || this == SKIPPED;
+        }
     }
 }

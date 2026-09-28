@@ -48,8 +48,12 @@ execution:
     max-retries: ${WORKSPACE_MAX_RETRIES:3}
     retry-enabled: ${WORKSPACE_RETRY_ENABLED:true}
     worker-id: ${WORKER_ID:worker-local}
-    concurrency: ${WORKER_CONCURRENCY:1}
-    prefetch: ${WORKER_PREFETCH:1}
+    # Worker concurrency: the hard cap on how many jobs execute at the same time.
+    # This sizes the RabbitMQ consumer pool for `pipeline-jobs`; it is not a
+    # suggestion. Prefetch defaults to the same value (override with
+    # WORKER_PREFETCH), so a pool of N can actually hold N unacked messages.
+    concurrency: ${WORKER_CONCURRENCY:4}
+    prefetch: ${WORKER_PREFETCH:0}
   results:
     exchange: ${CICD_RESULTS_EXCHANGE:cicd.results.exchange}
     queue: ${CICD_RESULT_QUEUE:cicd.results}

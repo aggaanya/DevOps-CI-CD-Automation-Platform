@@ -86,6 +86,15 @@ public class JobAttempt {
     }
 
     public enum AttemptStatus {
-        PENDING, RUNNING, SUCCESS, FAILED, CANCELLED
+        PENDING, RUNNING, SUCCESS, FAILED, CANCELLED;
+
+        /**
+         * A terminal attempt will never change again, so a late worker result must
+         * not overwrite it. Retries get a fresh attempt row, which is what makes
+         * "the attempt already finished" a safe guard against duplicate results.
+         */
+        public boolean isTerminal() {
+            return this == SUCCESS || this == FAILED || this == CANCELLED;
+        }
     }
 }

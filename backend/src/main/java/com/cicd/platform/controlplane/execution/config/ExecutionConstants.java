@@ -22,6 +22,18 @@ public final class ExecutionConstants {
     public static final String WORKSPACE_ARTIFACTS_DIR = "artifacts";
 
     public static final String DEFAULT_WORKER_ID = "worker-local";
-    public static final int DEFAULT_CONCURRENCY = 1;
+
+    /**
+     * Default job consumer threads. Four is the smallest value that can actually
+     * demonstrate the {@code BUILD -> (TEST | SCAN) -> PACKAGE} fan-out while still
+     * being a conservative default for a laptop.
+     */
+    public static final int DEFAULT_CONCURRENCY = 4;
+
+    /**
+     * Retained for callers that want to reason about the default explicitly; the
+     * effective prefetch now tracks the consumer count
+     * ({@code WorkspaceConfig#resolvePrefetch(int)}).
+     */
     public static final int DEFAULT_PREFETCH = 1;
 }

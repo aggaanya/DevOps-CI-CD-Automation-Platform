@@ -252,6 +252,21 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
 
+      # Control-plane RabbitMQ consumer pool. WORKER_CONCURRENCY is a hard upper
+      # bound on how many jobs of one run execute concurrently: it sizes the
+      # `pipeline-jobs` listener pool in the backend, and prefetch defaults to
+      # the same value so the pool can actually hold that many unacked messages.
+      # Raise both together on machines with more CPU.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      WORKER_PREFETCH: ${WORKER_PREFETCH:-0}
+
+      # In-process job execution is DISABLED in this stack: the standalone worker
+      # service is the sole consumer of `pipeline-jobs`. The control plane only
+      # dispatches and settles state; the worker executes and reports results
+      # back through `cicd.results`. Set to "true" to let the backend execute
+      # jobs in-process instead (single-node mode).
+      EXECUTION_DISPATCH_CONSUME_ENABLED: "false"
+
       # JPA + Flyway — schema managed by Flyway migrations
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
 
@@ -259,6 +274,7 @@ services:
       # Docker network, issuer enforced against the public Keycloak URL.
       CICD_JWT_JWKS_URI: http://keycloak:8080/realms/cicd-platform/protocol/openid-connect/certs
       CICD_JWT_ISSUER: http://localhost:8083/realms/cicd-platform
+      WEBHOOK_GITHUB_SECRET: ${WEBHOOK_GITHUB_SECRET:-benchmark-secret}
 
     # Host 8081 → Container 8081
     ports:

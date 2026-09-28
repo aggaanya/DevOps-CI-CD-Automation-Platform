@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public interface WorkerResultRepository extends JpaRepository<WorkerResult, UUID> {
     boolean existsByJobId(String jobId);
+    boolean existsByJobIdAndStatusAndDurationMs(String jobId, String status, long durationMs);
     List<WorkerResult> findByJobIdOrderByReceivedAtDesc(String jobId);
     List<WorkerResult> findTop20ByOrderByReceivedAtDesc();
 }
